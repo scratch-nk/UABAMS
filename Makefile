@@ -71,4 +71,10 @@ serialmonitor0:
 serialmonitor1:
 	minicom -b 115200 -D /dev/ttyACM1
 
+flash_accelometer:
+	$(MAKE) -C src/accelerometer  flash
+
+flash_gpsstorage:
+	$(MAKE) -C src/gps_storage flash
+
 .PHONY: all common accelerometer gps_storage clean clean-common clean-accelerometer clean-gps_storage seriallist serialmonitor serialmonitor0 serialmonitor1
