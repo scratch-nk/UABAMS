@@ -24,12 +24,14 @@ uint8_t server_ip[] = {192,168,1,100};
 
 
   
+    /* -- nk
     volatile uint32_t ms_ticks = 0;
 
     void SysTick_Handler(void)
     {
         ms_ticks++;
     }
+    */
 
 
 

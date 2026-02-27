@@ -1,49 +1,33 @@
-CC      = arm-none-eabi-gcc
-OBJCOPY = arm-none-eabi-objcopy
+PROJECT_ROOT := ../..
 
-PROJECT_ROOT := ../../
+LDFLAGS = -T $(PROJECT_ROOT)/lib/linker.ld $(LDFLAGS_COMMON)
 
-MCU     = -mcpu=cortex-m4 -mthumb
-DEFS    = -DSTM32F411xE
-
-CFLAGS  = $(MCU) -O0 -g -Wall -ffreestanding $(DEFS) -u _printf_float
-LDFLAGS = -T $(PROJECT_ROOT)/linker.ld -nostdlib -lc -lm -lgcc -lnosys
-
-
-INCLUDES = \
- -I$(PROJECT_ROOT)/include/cmsis/Include \
- -I$(PROJECT_ROOT)/include
+INCLUDES = -I$(PROJECT_ROOT)/include/cmsis/Include -I$(PROJECT_ROOT)/include
 
 SRC = \
  main.c \
- usart_debug.c \
  i2c.c \
- spi2.c \
  spi.c \
- w5500.c \
- adxl345.c \
  gps.c \
- delay.c \
- system_stm32f4xx.c \
- startup.s \
- syscalls.c
+ adxl345.c
 
-OBJ = $(SRC:.c=.o)
-OBJ := $(OBJ:.s=.o)
+OBJDIR = obj
+COMMON_OBJ = $(wildcard ../common/obj/*.o)
+OBJ = $(addprefix $(OBJDIR)/,$(SRC:.c=.o))
 
 TARGET = firmware.elf
 BIN    = firmware.bin
 
 all: $(TARGET) $(BIN)
 
-%.o: %.c
+$(OBJDIR):
+	mkdir -p $(OBJDIR)
+
+$(OBJDIR)/%.o: %.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-%.o: %.s
-	$(CC) $(CFLAGS) -c $< -o $@
-
 $(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) $(OBJ) $(LDFLAGS) -o $@
+	$(CC) $(CFLAGS) $(OBJ) $(COMMON_OBJ) $(LDFLAGS) -o $@
 
 $(BIN): $(TARGET)
 	$(OBJCOPY) -O binary $< $@
@@ -53,10 +37,7 @@ flash:
 	        -c "program $(TARGET) verify reset exit"
 
 clean:
-	rm -f *.o *.elf *.bin
+	rm -rf $(OBJDIR)/* *.elf *.bin
 
-serialmonitor:
-	minicom -b 115200 -D /dev/ttyACM0
-
-.PHONY: all clean flash serialmonitor
+.PHONY: all clean flash
 	
