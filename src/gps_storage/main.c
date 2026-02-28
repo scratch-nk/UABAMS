@@ -29,7 +29,8 @@ int main(void)
     uint8_t rx_buf[1024];
     uint8_t connected = 0;
     int client_fd = -1;
-    char* str;
+    char str[1024];
+    int str_cnt;
 
     static uint32_t last_periodic_gps = 0; 
     // uint32_t last_gps_print = 0;
@@ -106,7 +107,7 @@ int main(void)
                     spd
                 );
 
-                str = snprintf (
+                str_cnt = snprintf (str, sizeof(str),
                     "\r\n[GPS DATA]\r\n"
                     "DATE : %02d/%02d/%04d\r\n"
                     "TIME : %02d:%02d:%02d\r\n"
@@ -124,7 +125,7 @@ int main(void)
                     spd
                 );
 
-                tcp_send(client_fd, str, strlen(str));
+                tcp_send(client_fd, str, str_cnt);
             }
 
             /* ===== EVENT → GPS SNAPSHOT ===== */
@@ -154,6 +155,25 @@ int main(void)
                         lon, gps_data.ew,
                         spd
                     );
+
+                    str_cnt = snprintf(str, 1024,
+                        "DATE : %02d/%02d/%04d\r\n"
+                        "TIME : %02d:%02d:%02d\r\n"
+                        "LAT  : %.6f %c\r\n"
+                        "LON  : %.6f %c\r\n"
+                        "SPD  : %.2f km/h\r\n",
+                        gps_data.day,
+                        gps_data.month,
+                        gps_data.year,
+                        gps_data.hour,
+                        gps_data.minute,
+                        gps_data.second,
+                        lat, gps_data.ns,
+                        lon, gps_data.ew,
+                        spd
+                    );
+                    tcp_send(client_fd, str, str_cnt);
+
                 }
                 else
                 {
