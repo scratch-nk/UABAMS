@@ -94,22 +94,22 @@ SysTick_Config(SystemCoreClock / 1000);
 
     while (1)
     {
-            float sum_z1 = 0, sum_x1 = 0;
-            float sum_z2 = 0, sum_x2 = 0;
-            float sumsq_z1 = 0, sumsq_x1 = 0;
-            float sumsq_z2 = 0, sumsq_x2 = 0;
+        float sum_z1 = 0, sum_x1 = 0;
+        float sum_z2 = 0, sum_x2 = 0;
+        float sumsq_z1 = 0, sumsq_x1 = 0;
+        float sumsq_z2 = 0, sumsq_x2 = 0;
 
-            float mean_z1, mean_x1, mean_z2, mean_x2;
-            float sd_sum_z1 = 0, sd_sum_x1 = 0;
-            float sd_sum_z2 = 0, sd_sum_x2 = 0;
+        float mean_z1, mean_x1, mean_z2, mean_x2;
+        float sd_sum_z1 = 0, sd_sum_x1 = 0;
+        float sd_sum_z2 = 0, sd_sum_x2 = 0;
 
-            s1_peak = s2_peak = 0.0f;
+        s1_peak = s2_peak = 0.0f;
 
-            float s1_p2p_v = 2.0f * s1_sd_v;
-    float s1_p2p_l = 2.0f * s1_sd_l;
+        float s1_p2p_v = 2.0f * s1_sd_v;
+        float s1_p2p_l = 2.0f * s1_sd_l;
 
-    float s2_p2p_v = 2.0f * s2_sd_v;
-    float s2_p2p_l = 2.0f * s2_sd_l;
+        float s2_p2p_v = 2.0f * s2_sd_v;
+        float s2_p2p_l = 2.0f * s2_sd_l;
 
         //  SAMPLING 
         for (int i=0;i<SAMPLE_COUNT;i++)
@@ -159,79 +159,84 @@ SysTick_Config(SystemCoreClock / 1000);
         s2_sd_l=sqrtf(sd_sum_x2/SAMPLE_COUNT);
 
 
-//   CONTINUOUS REPORT 
-usart_debug("\r\n----- UBMS CONTINUOUS DATA -----\r\n");
-usart_debug("COACH_ID : C1\r\n");
-usart_debug("BOGIE_ID : B1\r\n");
+        //   CONTINUOUS REPORT 
+        usart_debug("\r\n----- UBMS CONTINUOUS DATA -----\r\n");
+        usart_debug("COACH_ID : C1\r\n");
+        usart_debug("BOGIE_ID : B1\r\n");
 
 
-        //  PACKET 
-snprintf(tcp_buf,sizeof(tcp_buf),
-"\r\n[AXLE BOX LEFT - S1]\r\n"
-"Ax : %.3f g  Ay : %.3f g  Az : %.3f g\r\n"
-"RMS-V : %.3f g\r\n"
-"RMS-L : %.3f g\r\n"
-"SD-V  : %.3f g\r\n"
-"SD-L  : %.3f g\r\n"
-"P2P-V : %.3f g\r\n"
-"P2P-L : %.3f g\r\n"
-"PEAK  : %.3f g\r\n",
-s1_x[SAMPLE_COUNT-1], y1, s1_z[SAMPLE_COUNT-1],
-s1_rms_v, s1_rms_l,
-s1_sd_v,  s1_sd_l,
-2.0f*s1_sd_v, 2.0f*s1_sd_l,
-s1_peak
-);
+                //  PACKET 
+        snprintf(tcp_buf,sizeof(tcp_buf),
+        "\r\n[AXLE BOX LEFT - S1]\r\n"
+        "Ax : %.3f g  Ay : %.3f g  Az : %.3f g\r\n"
+        "RMS-V : %.3f g\r\n"
+        "RMS-L : %.3f g\r\n"
+        "SD-V  : %.3f g\r\n"
+        "SD-L  : %.3f g\r\n"
+        "P2P-V : %.3f g\r\n"
+        "P2P-L : %.3f g\r\n"
+        "PEAK  : %.3f g\r\n",
+        s1_x[SAMPLE_COUNT-1], y1, s1_z[SAMPLE_COUNT-1],
+        s1_rms_v, s1_rms_l,
+        s1_sd_v,  s1_sd_l,
+        2.0f*s1_sd_v, 2.0f*s1_sd_l,
+        s1_peak
+        );
 
-usart_debug(tcp_buf);
- UBMS_Send_TCP(tcp_buf);
-
-
-snprintf(tcp_buf,sizeof(tcp_buf),
-"\r\n[AXLE BOX RIGHT - S2]\r\n"
-"Ax : %.3f g  Ay : %.3f g  Az : %.3f g\r\n"
-"RMS-V : %.3f g\r\n"
-"RMS-L : %.3f g\r\n"
-"SD-V  : %.3f g\r\n"
-"SD-L  : %.3f g\r\n"
-"P2P-V : %.3f g\r\n"
-"P2P-L : %.3f g\r\n"
-"PEAK  : %.3f g\r\n",
-s2_x[SAMPLE_COUNT-1], y2, s2_z[SAMPLE_COUNT-1],
-s2_rms_v, s2_rms_l,
-s2_sd_v,  s2_sd_l,
-2.0f*s2_sd_v, 2.0f*s2_sd_l,
-s2_peak
-);
-
-usart_debug(tcp_buf);
- UBMS_Send_TCP(tcp_buf);
-
-snprintf(tcp_buf,sizeof(tcp_buf),
-"\r\nFS     : %d Hz\r\n"
-"WINDOW : %d ms\r\n",
-FS_HZ, WINDOW_MS);
-
-usart_debug(tcp_buf);
- UBMS_Send_TCP(tcp_buf);
+        usart_debug(tcp_buf);
+        UBMS_Send_TCP(tcp_buf);
 
 
+        snprintf(tcp_buf,sizeof(tcp_buf),
+        "\r\n[AXLE BOX RIGHT - S2]\r\n"
+        "Ax : %.3f g  Ay : %.3f g  Az : %.3f g\r\n"
+        "RMS-V : %.3f g\r\n"
+        "RMS-L : %.3f g\r\n"
+        "SD-V  : %.3f g\r\n"
+        "SD-L  : %.3f g\r\n"
+        "P2P-V : %.3f g\r\n"
+        "P2P-L : %.3f g\r\n"
+        "PEAK  : %.3f g\r\n",
+        s2_x[SAMPLE_COUNT-1], y2, s2_z[SAMPLE_COUNT-1],
+        s2_rms_v, s2_rms_l,
+        s2_sd_v,  s2_sd_l,
+        2.0f*s2_sd_v, 2.0f*s2_sd_l,
+        s2_peak
+        );
 
-            // EVENT 
-            if (s1_peak >= EVENT_TH || s2_peak >= EVENT_TH)
-            {
-                snprintf(tcp_buf,sizeof(tcp_buf),
-                "\r\n*** EVENT: VIBRATION ALERT ***\r\n"
-                "S1 PEAK : %.2f g (%s)\r\n"
-                "S2 PEAK : %.2f g (%s)\r\n",
-                s1_peak, vib_level(s1_peak),
-                s2_peak, vib_level(s2_peak));
+        usart_debug(tcp_buf);
+        UBMS_Send_TCP(tcp_buf);
 
-                usart_debug(tcp_buf);
-                UBMS_Send_TCP(tcp_buf);
-            }
+        snprintf(tcp_buf,sizeof(tcp_buf),
+        "\r\nFS     : %d Hz\r\n"
+        "WINDOW : %d ms\r\n",
+        FS_HZ, WINDOW_MS);
 
-            usart_debug("UBMS PACKET SENT\r\n");
+        usart_debug(tcp_buf);
+        UBMS_Send_TCP(tcp_buf);
+
+        /* Front end x,y,z accelerometer format */
+        snprintf(tcp_buf,sizeof(tcp_buf),
+            "X = %.3f Y = %.3f Z = %.3f\n",
+            s1_x[SAMPLE_COUNT-1], y1, s1_z[SAMPLE_COUNT-1],
+        );
+
+
+        // EVENT 
+        if (s1_peak >= EVENT_TH || s2_peak >= EVENT_TH)
+        {
+            snprintf(tcp_buf,sizeof(tcp_buf),
+            "\r\n*** EVENT: VIBRATION ALERT ***\r\n"
+            "S1 PEAK : %.2f g (%s)\r\n"
+            "S2 PEAK : %.2f g (%s)\r\n",
+            s1_peak, vib_level(s1_peak),
+            s2_peak, vib_level(s2_peak));
+
+            usart_debug(tcp_buf);
+            UBMS_Send_TCP(tcp_buf);
+        }
+
+        usart_debug("UBMS PACKET SENT\r\n");
         // usart_debug(tcp_buf);
         // UBMS_Send_TCP(tcp_buf);
     }
