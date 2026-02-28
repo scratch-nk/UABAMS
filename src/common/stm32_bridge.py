@@ -12,10 +12,11 @@ import time
 import re
 import signal
 import sys
+import argparse
 from datetime import datetime, timedelta
 
 # Configuration
-MQTT_HOST = "localhost"
+MQTT_HOST = "192.168.0.125"
 MQTT_PORT = 1883
 MQTT_TOPIC = "sensor/railway/accelerometer/stm32"
 BAUD_RATE = 115200
@@ -59,7 +60,7 @@ def find_stm32_port():
             return None
         return None
 
-def parse_accelerometer_data(line):
+def parse_accelerometer_data(line, option):
     """
     Parse the USART output line: "X=1  Y=-13  Z=-262"
     Returns tuple (x_g, y_g, z_g, x_raw, y_raw, z_raw)
@@ -86,7 +87,8 @@ def parse_accelerometer_data(line):
         
         return x_g, y_g, z_g, x_raw, y_raw, z_raw
     
-    print(f"Could not parse line: {line}")
+    if option == 'd':
+        print(f"{line}")
     return None
 
 def calculate_peak_g(x_g, y_g, z_g):
@@ -105,17 +107,27 @@ def determine_severity(peak_g):
 
 def main():
     global running
-    
+
+    parser = argparse.ArgumentParser(description="STM32 ADXL345 Bridge")
+    parser.add_argument("-t", "--tty", help="Serial port (e.g., /dev/ttyUSB0)")
+    parser.add_argument("-d", "--debug", action="store_true", help="Debug: print unparsed lines")
+    args = parser.parse_args()
+    option = 'd' if args.debug else None
+
     print("STM32 ADXL345 Bridge Starting...")
     print("====================================")
-    
-    # Find STM32 serial port
-    print("\n🔍 Detecting STM32 serial port...")
-    port = find_stm32_port()
-    
-    if not port:
-        print(" Could not find STM32 port. Please specify manually:")
-        port = input("Enter serial port (e.g., /dev/ttyUSB0): ").strip()
+
+    if args.tty:
+        port = args.tty
+        print(f"\nUsing specified port: {port}")
+    else:
+        # Find STM32 serial port
+        print("\n🔍 Detecting STM32 serial port...")
+        port = find_stm32_port()
+
+        if not port:
+            print(" Could not find STM32 port. Please specify manually:")
+            port = input("Enter serial port (e.g., /dev/ttyUSB0): ").strip()
     
     # Connect to serial
     try:
@@ -157,7 +169,7 @@ def main():
             
             if line:
                 # Parse accelerometer values
-                result = parse_accelerometer_data(line)
+                result = parse_accelerometer_data(line, option)
                 
                 if result:
                     x_g, y_g, z_g, x_raw, y_raw, z_raw = result

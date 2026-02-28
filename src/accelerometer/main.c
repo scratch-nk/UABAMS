@@ -217,9 +217,11 @@ SysTick_Config(SystemCoreClock / 1000);
 
         /* Front end x,y,z accelerometer format */
         snprintf(tcp_buf,sizeof(tcp_buf),
-            "X = %.3f Y = %.3f Z = %.3f\n",
-            s1_x[SAMPLE_COUNT-1], y1, s1_z[SAMPLE_COUNT-1],
+            "X=%d Y=%d Z=%d\r\n",
+            (int )s1_x[SAMPLE_COUNT-1], (int )y1, (int )s1_z[SAMPLE_COUNT-1]
         );
+        usart_debug(tcp_buf);
+        UBMS_Send_TCP(tcp_buf);
 
 
         // EVENT 
