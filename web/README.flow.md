@@ -23,6 +23,51 @@ React Frontend (port 3000)
 
 ---
 
+## How the Server Works
+
+The server is the central hub bridging the embedded device and the browser. Without it running, the frontend has nothing to connect to — no live data, no historical data, no API responses.
+
+### Web Service Endpoints
+
+| Service | Host | Explanation | Used by |
+|---------|------|-------------|---------|
+| REST API | `http://localhost:5000/api` | HTTP endpoints for fetching historical and aggregated data from PostgreSQL | Frontend (`client/src/services/api.js`) |
+| Socket.IO | `http://localhost:5000` | Persistent WebSocket connection for pushing live sensor data to the browser as it arrives | Frontend (`client/src/hooks/useWebSocket.js`, `Dashboard.js`, `Monitoring.js`) |
+| MQTT broker | `localhost:1883` | Message broker that receives publishes from the embedded device; the server subscribes here | Server (`server/src/services/mqttService.js`) |
+| React dev server | `http://localhost:3000` | Serves the frontend during development | Browser |
+
+Both the REST API and Socket.IO run on the **same Express/HTTP server** on port 5000. There is no separate WebSocket server.
+
+### The Four Roles
+
+**1. MQTT Subscriber**
+Connects to the Mosquitto broker and listens for messages published by the embedded device. This is the entry point for all sensor data — nothing enters the system without it.
+
+**2. Database Writer**
+Persists every incoming MQTT message into PostgreSQL:
+- All raw readings → `monitoring_data`
+- Impact events (peak_g > 2) → `accelerometer_events`
+
+**3. Real-time Broadcaster**
+The moment an MQTT message arrives, it is pushed to all connected browsers over Socket.IO — no polling, no delay.
+
+**4. REST API**
+Serves historical and aggregated data from PostgreSQL on demand: graphs, impact lists, GPS history, comfort index, and stats.
+
+```
+Embedded device
+      │ MQTT
+      ▼
+   Server  ──── writes ────▶ PostgreSQL
+      │                          │
+      │ Socket.IO (live)         │ SQL queries (history)
+      │                          │
+      └──────────▶ Browser ◀─────┘
+                   REST API
+```
+
+---
+
 ## 1. Embedded Device → MQTT Broker
 
 The STM32 bridge publishes JSON payloads to the broker.
