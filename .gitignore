@@ -1,0 +1,23 @@
+# Maintained by: scratch
+# Scope: React Native web/mobile frontend
+#Add project-specific ignores in .gitignore in respective directories
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Secrets — catch-all, never let these through
+.env
+.env.*
+*.pem
+*.key
+secrets.*
+config.local.*
