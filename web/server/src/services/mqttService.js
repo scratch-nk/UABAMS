@@ -10,8 +10,8 @@ const initMQTT = (socketIO) => {
     const clientId = `railway_backend_${Math.random().toString(16).slice(3)}`;
     
     mqttClient = mqtt.connect({
-        host: 'localhost',
-        port: 1883,
+        host: process.env.MQTT_HOST || 'localhost',
+        port: parseInt(process.env.MQTT_PORT) || 1883,
         clientId,
         clean: true,
         connectTimeout: 4000,
@@ -22,7 +22,8 @@ const initMQTT = (socketIO) => {
         console.log('✅ MQTT connected');
         
         // Subscribe to accelerometer topics
-        mqttClient.subscribe('sensor/railway/accelerometer/#', (err) => {
+        const prefix = process.env.MQTT_TOPIC_PREFIX || 'sensor/railway';
+        mqttClient.subscribe(`${prefix}/accelerometer/#`, (err) => {
             if (!err) {
                 console.log('✅ Subscribed to accelerometer topics');
             } else {

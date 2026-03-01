@@ -45,8 +45,8 @@ router.get('/history/:timeRange', async (req, res) => {
 router.get('/track', async (req, res) => {
     try {
         const query = `
-            SELECT 
-                time_bucket('1 minute', timestamp) as time,
+            SELECT
+                date_trunc('minute', timestamp) as time,
                 AVG(latitude) as lat,
                 AVG(longitude) as lng,
                 AVG(speed) as avg_speed,

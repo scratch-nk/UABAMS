@@ -36,8 +36,8 @@ const initScheduler = () => {
 const calculateRideComfortIndex = async () => {
     // Get recent accelerometer data
     const query = `
-        SELECT 
-            time_bucket('1 minute', time) as minute,
+        SELECT
+            date_trunc('minute', time) as minute,
             AVG(x_axis) as avg_x,
             AVG(y_axis) as avg_y,
             AVG(z_axis) as avg_z,
@@ -99,13 +99,12 @@ const cleanupOldData = async () => {
 };
 
 const generateHourlySummary = async () => {
-    const summary = await pool.query(`
-        INSERT INTO hourly_summaries (hour, total_impacts, max_g, avg_speed)
-        SELECT 
+    await pool.query(`
+        INSERT INTO hourly_summaries (hour, total_impacts, max_g)
+        SELECT
             date_trunc('hour', timestamp) as hour,
             COUNT(*) as total_impacts,
-            MAX(peak_g) as max_g,
-            AVG(speed) as avg_speed
+            MAX(peak_g) as max_g
         FROM accelerometer_events
         WHERE timestamp > NOW() - INTERVAL '1 hour'
         GROUP BY hour

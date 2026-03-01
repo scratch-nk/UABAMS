@@ -6,11 +6,10 @@ const { pool } = require('../../config/database');
 router.get('/realtime', async (req, res) => {
     try {
         const query = `
-            SELECT * FROM monitoring_data 
+            SELECT * FROM monitoring_data
             WHERE time > NOW() - INTERVAL '5 minutes'
             ORDER BY time DESC
         `;
-        
         const { rows } = await pool.query(query);
         res.json(rows);
     } catch (error) {
@@ -22,16 +21,26 @@ router.get('/realtime', async (req, res) => {
 router.get('/accelerometer/:timeRange', async (req, res) => {
     try {
         const { timeRange } = req.params;
-        let interval = '1 minute';
-        let range = '1 hour';
-        
-        if (timeRange === '1h') { interval = '1 minute'; range = '1 hour'; }
-        else if (timeRange === '24h') { interval = '5 minutes'; range = '24 hours'; }
-        else if (timeRange === '7d') { interval = '1 hour'; range = '7 days'; }
-        
+        const allowed = { '1h': true, '24h': true, '7d': true };
+        if (!allowed[timeRange]) {
+            return res.status(400).json({ error: 'Invalid time range. Use 1h, 24h, or 7d.' });
+        }
+
+        let bucketExpr, range;
+        if (timeRange === '1h') {
+            bucketExpr = `date_trunc('minute', time)`;
+            range = '1 hour';
+        } else if (timeRange === '24h') {
+            bucketExpr = `date_trunc('hour', time) + floor(extract(minute from time) / 5) * interval '5 minutes'`;
+            range = '24 hours';
+        } else {
+            bucketExpr = `date_trunc('hour', time)`;
+            range = '7 days';
+        }
+
         const query = `
-            SELECT 
-                time_bucket($1::interval, time) as bucket,
+            SELECT
+                ${bucketExpr} as bucket,
                 AVG(x_axis) as avg_x,
                 AVG(y_axis) as avg_y,
                 AVG(z_axis) as avg_z,
@@ -39,12 +48,12 @@ router.get('/accelerometer/:timeRange', async (req, res) => {
                 MAX(y_axis) as max_y,
                 MAX(z_axis) as max_z
             FROM monitoring_data
-            WHERE time > NOW() - $2::interval
+            WHERE time > NOW() - $1::interval
             GROUP BY bucket
             ORDER BY bucket DESC
         `;
-        
-        const { rows } = await pool.query(query, [interval, range]);
+
+        const { rows } = await pool.query(query, [range]);
         res.json(rows);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -55,8 +64,8 @@ router.get('/accelerometer/:timeRange', async (req, res) => {
 router.get('/ride-comfort', async (req, res) => {
     try {
         const query = `
-            SELECT 
-                time_bucket('5 minutes', timestamp) as bucket,
+            SELECT
+                date_trunc('hour', timestamp) + floor(extract(minute from timestamp) / 5) * interval '5 minutes' as bucket,
                 AVG(index_value) as avg_comfort,
                 COUNT(*) as samples
             FROM ride_comfort_index
@@ -64,7 +73,6 @@ router.get('/ride-comfort', async (req, res) => {
             GROUP BY bucket
             ORDER BY bucket DESC
         `;
-        
         const { rows } = await pool.query(query);
         res.json(rows);
     } catch (error) {
@@ -76,8 +84,8 @@ router.get('/ride-comfort', async (req, res) => {
 router.get('/comfort-histogram', async (req, res) => {
     try {
         const query = `
-            SELECT 
-                CASE 
+            SELECT
+                CASE
                     WHEN index_value BETWEEN 0 AND 10 THEN '0-10'
                     WHEN index_value BETWEEN 10 AND 20 THEN '10-20'
                     WHEN index_value BETWEEN 20 AND 30 THEN '20-30'
@@ -95,7 +103,6 @@ router.get('/comfort-histogram', async (req, res) => {
             GROUP BY range
             ORDER BY range
         `;
-        
         const { rows } = await pool.query(query);
         res.json(rows);
     } catch (error) {

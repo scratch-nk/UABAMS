@@ -16,7 +16,8 @@ import argparse
 from datetime import datetime, timedelta
 
 # Configuration
-MQTT_HOST = "192.168.0.125"
+# MQTT_HOST = "192.168.0.125"
+MQTT_HOST = "localhost"
 MQTT_PORT = 1883
 MQTT_TOPIC = "sensor/railway/accelerometer/stm32"
 BAUD_RATE = 115200

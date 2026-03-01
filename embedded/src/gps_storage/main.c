@@ -27,7 +27,6 @@ int main(void)
 {
     uint8_t rx_buf[1024];
     uint8_t connected = 0;
-    int client_fd = -1;
 
     static uint32_t last_periodic_gps = 0; 
     // uint32_t last_gps_print = 0;

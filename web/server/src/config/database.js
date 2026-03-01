@@ -14,10 +14,7 @@ const connectDB = async () => {
     try {
         await pool.connect();
         console.log('✅ Database connected successfully');
-        
-        // Create tables if they don't exist
         await createTables();
-        
     } catch (error) {
         console.error('❌ Database connection error:', error);
         throw error;
@@ -45,8 +42,36 @@ const createTables = async () => {
             device_id VARCHAR(50)
         );
 
+        CREATE TABLE IF NOT EXISTS gps_tracking (
+            id BIGSERIAL PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            latitude FLOAT,
+            longitude FLOAT,
+            altitude FLOAT,
+            speed FLOAT,
+            heading FLOAT,
+            device_id VARCHAR(50)
+        );
+
+        CREATE TABLE IF NOT EXISTS ride_comfort_index (
+            id BIGSERIAL PRIMARY KEY,
+            timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            index_value FLOAT,
+            category VARCHAR(20)
+        );
+
+        CREATE TABLE IF NOT EXISTS hourly_summaries (
+            id BIGSERIAL PRIMARY KEY,
+            hour TIMESTAMPTZ NOT NULL,
+            total_impacts INTEGER,
+            max_g FLOAT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_monitoring_time ON monitoring_data(time DESC);
         CREATE INDEX IF NOT EXISTS idx_events_timestamp ON accelerometer_events(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_gps_timestamp ON gps_tracking(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_comfort_timestamp ON ride_comfort_index(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_hourly_hour ON hourly_summaries(hour DESC);
     `;
 
     try {
