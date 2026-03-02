@@ -46,7 +46,9 @@ const SpeedGraph = () => {
     );
   }
 
-  const avgSpeed = data.reduce((acc, curr) => acc + (curr.avg_speed || 0), 0) / data.length;
+  const avgSpeed = data.length > 0
+    ? data.reduce((acc, curr) => acc + (curr.avg_speed || 0), 0) / data.length
+    : 0;
 
   return (
     <ResponsiveContainer width="100%" height="100%">

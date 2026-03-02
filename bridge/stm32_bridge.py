@@ -17,8 +17,12 @@ from datetime import datetime, timedelta
 
 # Configuration
 # MQTT_HOST = "192.168.0.125"
-MQTT_HOST = "192.168.0.125"
+MQTT_HOST = "localhost"
 MQTT_PORT = 1883
+MQTT_TOPIC_ACCL = "adj/datalogger/sensors/accelerometer"
+MQTT_TOPIC_GPS = "adj/datalogger/sensors/gps"
+MQTT_TOPIC_ALL = "adj/datalogger/sensors"   # NOTE: Code below *only* sends all data, 
+                                            # both GPS and accelerometer data is sent by boards together is parsed
 MQTT_TOPIC = "sensor/railway/accelerometer/stm32"
 BAUD_RATE = 115200
 SERIAL_PORT = None  # Will auto-detect
@@ -71,6 +75,14 @@ def parse_accelerometer_data(line, option):
     # pattern = r'X=(-?\d+)\s+Y=(-?\d+)\s+Z=(-?\d+)'
     # Pattern to match float values (with decimal place)
     pattern = r'X=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Y=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Z=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
+    #pattern = r'''
+    #    X=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
+    #    Y=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
+    #    Z=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
+    #    GPS_DATE="([^"]+)"\s+
+    #    GPS_TIME="([^"]+)"\s+
+    #    GPS_CORDS="([^,]+),\s*([^,]+),\s*([^"]+)"
+    #    '''
     match = re.search(pattern, line)
     
     if match:

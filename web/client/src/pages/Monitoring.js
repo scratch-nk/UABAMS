@@ -9,6 +9,30 @@ import {
   IconButton,
   Tooltip
 } from '@mui/material';
+
+// Error boundary to isolate react-leaflet (requires React 18, installed React 19)
+class MapErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error) {
+    console.warn('Map render failed (react-leaflet/React 19 incompatibility):', error.message);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Typography color="textSecondary">Map unavailable — upgrade react-leaflet to v5 for React 19</Typography>
+        </Box>
+      );
+    }
+    return this.props.children;
+  }
+}
 import RefreshIcon from '@mui/icons-material/Refresh';
 import WarningIcon from '@mui/icons-material/Warning';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -215,7 +239,9 @@ const Monitoring = () => {
               Geolocation Map
             </Typography>
             <Box sx={{ height: 'calc(100% - 40px)' }}>
-              <GeolocationMap impacts={impacts} />
+              <MapErrorBoundary>
+                <GeolocationMap impacts={impacts} />
+              </MapErrorBoundary>
             </Box>
           </Paper>
 

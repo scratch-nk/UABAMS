@@ -3,6 +3,29 @@ import { Box, Typography, Paper } from '@mui/material';
 import GeolocationMap from '../components/Map/GeolocationMap';
 import { fetchImpacts } from '../services/api';
 
+class MapErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error) {
+    console.warn('Map render failed:', error.message);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Typography color="textSecondary">Map unavailable — upgrade react-leaflet to v5 for React 19</Typography>
+        </Box>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const MapPage = () => {
   const [impacts, setImpacts] = useState([]);
   // Remove unused trackData
@@ -27,7 +50,9 @@ const MapPage = () => {
       </Typography>
       
       <Paper sx={{ p: 2, height: '70vh' }}>
-        <GeolocationMap impacts={impacts} />
+        <MapErrorBoundary>
+          <GeolocationMap impacts={impacts} />
+        </MapErrorBoundary>
       </Paper>
     </Box>
   );

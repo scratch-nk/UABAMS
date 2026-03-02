@@ -28,6 +28,8 @@ const AccelerometerGraph = () => {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 10000);
+    return () => clearInterval(interval);
   }, [loadData]);
 
   const CustomTooltip = ({ active, payload, label }) => {
@@ -90,7 +92,7 @@ const AccelerometerGraph = () => {
             tickFormatter={(time) => new Date(time).toLocaleTimeString()}
             stroke="#888"
           />
-          <YAxis stroke="#888" domain={[0, 25]} />
+          <YAxis stroke="#888" domain={['auto', 'auto']} />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
           
