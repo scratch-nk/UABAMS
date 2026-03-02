@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 # Configuration
 # MQTT_HOST = "192.168.0.125"
-MQTT_HOST = "localhost"
+MQTT_HOST = "192.168.0.125"
 MQTT_PORT = 1883
 MQTT_TOPIC = "sensor/railway/accelerometer/stm32"
 BAUD_RATE = 115200
@@ -66,18 +66,22 @@ def parse_accelerometer_data(line, option):
     Parse the USART output line: "X=1  Y=-13  Z=-262"
     Returns tuple (x_g, y_g, z_g, x_raw, y_raw, z_raw)
     """
+
     # Pattern to match X=1 Y=-13 Z=-262 (handles negative numbers)
-    pattern = r'X=(-?\d+)\s+Y=(-?\d+)\s+Z=(-?\d+)'
+    # pattern = r'X=(-?\d+)\s+Y=(-?\d+)\s+Z=(-?\d+)'
+    # Pattern to match float values (with decimal place)
+    pattern = r'X=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Y=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Z=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
     match = re.search(pattern, line)
     
     if match:
+        # print (f"unparsed line: {line}")
         # ADXL345 with ±2g range: 1g = 256 LSB
         # At rest, Z should read about +256 (1g) or -256 depending on orientation
         SCALE_FACTOR = 256.0
         
-        x_raw = int(match.group(1))
-        y_raw = int(match.group(2))
-        z_raw = int(match.group(3))
+        x_raw = float (match.group(1))
+        y_raw = float (match.group(2))
+        z_raw = float (match.group(3))
         
         # Convert to g
         x_g = x_raw / SCALE_FACTOR
