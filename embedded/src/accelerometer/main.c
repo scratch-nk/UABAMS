@@ -190,6 +190,13 @@ int main(void)
         usart_debug(tcp_buf);
         UBMS_Send_TCP(tcp_buf);
 
+        /* Front end x,y,z accelerometer format. Bug: Both accelerometers sent together */
+        snprintf(tcp_buf,sizeof(tcp_buf),
+		"X=%.3f Y=%.3f Z=%.3f\r\n",
+		s1_x[SAMPLE_COUNT-1], y1, s1_z[SAMPLE_COUNT-1]);
+        usart_debug(tcp_buf);
+        UBMS_Send_TCP(tcp_buf);
+
 
         snprintf(tcp_buf,sizeof(tcp_buf),
         "\r\n[AXLE BOX RIGHT - S2]\r\n"
@@ -211,6 +218,14 @@ int main(void)
         usart_debug(tcp_buf);
         UBMS_Send_TCP(tcp_buf);
 
+        /* Front end x,y,z accelerometer format. Bug: Both accelerometers sent together */
+        snprintf(tcp_buf,sizeof(tcp_buf),
+		"X=%.3f Y=%.3f Z=%.3f\r\n",
+		s2_x[SAMPLE_COUNT-1], y2, s2_z[SAMPLE_COUNT-1]);
+        usart_debug(tcp_buf);
+        UBMS_Send_TCP(tcp_buf);
+
+
         snprintf(tcp_buf,sizeof(tcp_buf),
         "\r\nFS     : %d Hz\r\n"
         "WINDOW : %d ms\r\n",
@@ -219,15 +234,7 @@ int main(void)
         usart_debug(tcp_buf);
         UBMS_Send_TCP(tcp_buf);
 
-        /* Front end x,y,z accelerometer format */
-        snprintf(tcp_buf,sizeof(tcp_buf),
-            "X=%d Y=%d Z=%d\r\n",
-            (int )s1_x[SAMPLE_COUNT-1], (int )y1, (int )s1_z[SAMPLE_COUNT-1]
-        );
-        usart_debug(tcp_buf);
-        UBMS_Send_TCP(tcp_buf);
-
-
+        
         // EVENT 
         if (s1_peak >= EVENT_TH || s2_peak >= EVENT_TH)
         {
