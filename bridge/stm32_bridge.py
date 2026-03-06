@@ -20,8 +20,8 @@ MQTT_HOST = "localhost"
 MQTT_PORT = 1883
 # MQTT_USER = "mqtt_user"   # Set to None to disable authentication
 # MQTT_PASS = "scratch2026"  # Set to None to disable authentication
-MQTT_USER = ""   # Set to None to disable authentication
-MQTT_PASS = ""  # Set to None to disable authentication
+MQTT_USER = None   # Set to None to disable authentication
+MQTT_PASS = None  # Set to None to disable authentication
 
 MQTT_TOPIC_ACCL = "adj/datalogger/sensors/accelerometer"
 MQTT_TOPIC_GPS  = "adj/datalogger/sensors/gps"
@@ -45,33 +45,24 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 # ── MQTT Callbacks ────────────────────────────────────────
-def on_connect(client, userdata, flags, rc, properties=None):
-    rc_messages = {
-        0: "Connected successfully",
-        1: "Connection refused — incorrect protocol version",
-        2: "Connection refused — invalid client identifier",
-        3: "Connection refused — server unavailable",
-        4: "Connection refused — bad username or password",
-        5: "Connection refused — not authorised",
-    }
-    message = rc_messages.get(rc, f"Unknown error (rc={rc})")
-    if rc == 0:
-        print(f"✅ MQTT: {message}")
-    else:
-        print(f"❌ MQTT connection failed: {message}")
-        if rc == 4:
+def on_connect(client, userdata, connect_flags, reason_code, properties):
+    if reason_code.is_failure:
+        print(f"❌ MQTT connection failed: {reason_code}")
+        if reason_code.value == 4:
             print("   → Check MQTT_USER and MQTT_PASS constants at top of file")
             print(f"   → Currently set: user='{MQTT_USER}' pass='{MQTT_PASS}'")
-        elif rc == 5:
+        elif reason_code.value == 5:
             print("   → Check if this user is allowed in /etc/mosquitto/passwd")
+    else:
+        print("✅ MQTT: Connected successfully")
 
-def on_disconnect(client, userdata, rc, properties=None, reason=None):
-    if rc == 0:
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    if reason_code.value == 0:
         print("MQTT: Disconnected cleanly")
     else:
-        print(f"⚠️  MQTT: Unexpected disconnect (rc={rc}), will reconnect...")
+        print(f"⚠️  MQTT: Unexpected disconnect ({reason_code}), will reconnect...")
 
-def on_publish(client, userdata, mid, reason_code=None, properties=None):
+def on_publish(client, userdata, mid, reason_code, properties):
     pass  # Uncomment below to debug publishes
     # print(f"MQTT: Message {mid} published")
 
