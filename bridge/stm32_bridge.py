@@ -15,19 +15,23 @@ import sys
 import argparse
 from datetime import datetime, timedelta
 
-# Configuration
-# MQTT_HOST = "192.168.0.125"
+# ── MQTT Configuration ────────────────────────────────────
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
+MQTT_USER = "mqtt_user"   # Set to None to disable authentication
+MQTT_PASS = "scratch2026"  # Set to None to disable authentication
+
 MQTT_TOPIC_ACCL = "adj/datalogger/sensors/accelerometer"
-MQTT_TOPIC_GPS = "adj/datalogger/sensors/gps"
-MQTT_TOPIC_ALL = "adj/datalogger/sensors"   # NOTE: Code below *only* sends all data, 
-                                            # both GPS and accelerometer data is sent by boards together is parsed
-MQTT_TOPIC = "sensor/railway/accelerometer/stm32"
-BAUD_RATE = 115200
+MQTT_TOPIC_GPS  = "adj/datalogger/sensors/gps"
+MQTT_TOPIC_ALL  = "adj/datalogger/sensors"   # NOTE: Code below *only* sends all data,
+                                              # both GPS and accelerometer data is sent by boards together is parsed
+MQTT_TOPIC      = "sensor/railway/accelerometer/stm32"
+
+# ── Serial Configuration ──────────────────────────────────
+BAUD_RATE   = 115200
 SERIAL_PORT = None  # Will auto-detect
 
-# Global flag
+# ── Global flag ───────────────────────────────────────────
 running = True
 
 def signal_handler(sig, frame):
@@ -38,82 +42,97 @@ def signal_handler(sig, frame):
 
 signal.signal(signal.SIGINT, signal_handler)
 
+# ── MQTT Callbacks ────────────────────────────────────────
+def on_connect(client, userdata, flags, rc, properties=None):
+    rc_messages = {
+        0: "Connected successfully",
+        1: "Connection refused — incorrect protocol version",
+        2: "Connection refused — invalid client identifier",
+        3: "Connection refused — server unavailable",
+        4: "Connection refused — bad username or password",
+        5: "Connection refused — not authorised",
+    }
+    message = rc_messages.get(rc, f"Unknown error (rc={rc})")
+    if rc == 0:
+        print(f"✅ MQTT: {message}")
+    else:
+        print(f"❌ MQTT connection failed: {message}")
+        if rc == 4:
+            print("   → Check MQTT_USER and MQTT_PASS constants at top of file")
+            print(f"   → Currently set: user='{MQTT_USER}' pass='{MQTT_PASS}'")
+        elif rc == 5:
+            print("   → Check if this user is allowed in /etc/mosquitto/passwd")
+
+def on_disconnect(client, userdata, rc, properties=None, reason=None):
+    if rc == 0:
+        print("MQTT: Disconnected cleanly")
+    else:
+        print(f"⚠️  MQTT: Unexpected disconnect (rc={rc}), will reconnect...")
+
+def on_publish(client, userdata, mid, reason_code=None, properties=None):
+    pass  # Uncomment below to debug publishes
+    # print(f"MQTT: Message {mid} published")
+
+# ── Serial port detection ─────────────────────────────────
 def find_stm32_port():
     """Auto-detect STM32 serial port"""
     ports = serial.tools.list_ports.comports()
-    
-    # Common STM32 USB-Serial identifiers
+
     stm32_vendors = ['STMicro', 'STM32', 'USB Serial', 'CP210', 'CH340', 'FTDI']
-    
+
     for port in ports:
         print(f"Checking {port.device}: {port.description}")
         for vendor in stm32_vendors:
             if vendor.lower() in port.description.lower():
-                print(f" Found STM32 on {port.device}")
+                print(f"✅ Found STM32 on {port.device}")
                 return port.device
-    
-    # If no match, ask user
+
     if ports:
         print("\nAvailable ports:")
         for i, port in enumerate(ports):
-            print(f"{i}: {port.device} - {port.description}")
-        
+            print(f"  {i}: {port.device} - {port.description}")
+
         choice = input("\nSelect port number: ")
         try:
             return ports[int(choice)].device
-        except:
+        except (ValueError, IndexError):
+            print("❌ Invalid selection")
             return None
-        return None
 
+    print("❌ No serial ports found")
+    return None
+
+# ── Data parsing ──────────────────────────────────────────
 def parse_accelerometer_data(line, option):
     """
     Parse the USART output line: "X=1  Y=-13  Z=-262"
     Returns tuple (x_g, y_g, z_g, x_raw, y_raw, z_raw)
     """
-
-    # Pattern to match X=1 Y=-13 Z=-262 (handles negative numbers)
-    # pattern = r'X=(-?\d+)\s+Y=(-?\d+)\s+Z=(-?\d+)'
-    # Pattern to match float values (with decimal place)
     pattern = r'X=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Y=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Z=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
-    #pattern = r'''
-    #    X=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
-    #    Y=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
-    #    Z=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
-    #    GPS_DATE="([^"]+)"\s+
-    #    GPS_TIME="([^"]+)"\s+
-    #    GPS_CORDS="([^,]+),\s*([^,]+),\s*([^"]+)"
-    #    '''
     match = re.search(pattern, line)
-    
+
     if match:
-        # print (f"unparsed line: {line}")
-        # ADXL345 with ±2g range: 1g = 256 LSB
-        # At rest, Z should read about +256 (1g) or -256 depending on orientation
         SCALE_FACTOR = 256.0
-        
-        x_raw = float (match.group(1))
-        y_raw = float (match.group(2))
-        z_raw = float (match.group(3))
-        
-        # Convert to g
+
+        x_raw = float(match.group(1))
+        y_raw = float(match.group(2))
+        z_raw = float(match.group(3))
+
         x_g = x_raw / SCALE_FACTOR
         y_g = y_raw / SCALE_FACTOR
         z_g = z_raw / SCALE_FACTOR
-        
+
         print(f"Parsed: raw=({x_raw}, {y_raw}, {z_raw}) -> g=({x_g:.3f}, {y_g:.3f}, {z_g:.3f})")
-        
         return x_g, y_g, z_g, x_raw, y_raw, z_raw
-    
+
     if option == 'd':
-        print(f"{line}")
+        print(f"Unparsed: {line}")
     return None
 
 def calculate_peak_g(x_g, y_g, z_g):
-    """Calculate resultant g-force"""
     return (x_g*x_g + y_g*y_g + z_g*z_g)**0.5
 
 def determine_severity(peak_g):
-    """Determine severity based on g-force"""
     if peak_g > 16:
         return "HIGH"
     elif peak_g > 8:
@@ -122,11 +141,46 @@ def determine_severity(peak_g):
         return "LOW"
     return "NORMAL"
 
+# ── MQTT client setup ─────────────────────────────────────
+def create_mqtt_client():
+    """Create and connect MQTT client with optional authentication."""
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="stm32-bridge")
+    client.on_connect    = on_connect
+    client.on_disconnect = on_disconnect
+    client.on_publish    = on_publish
+
+    # Only set credentials if both are provided
+    if MQTT_USER is not None and MQTT_PASS is not None:
+        print(f"🔐 MQTT auth enabled (user='{MQTT_USER}')")
+        client.username_pw_set(MQTT_USER, MQTT_PASS)
+    else:
+        print("⚠️  MQTT auth disabled (anonymous mode)")
+
+    try:
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        client.loop_start()
+        print(f"📡 Connecting to MQTT broker at {MQTT_HOST}:{MQTT_PORT}...")
+        time.sleep(1)  # Give on_connect time to fire
+    except ConnectionRefusedError:
+        print(f"❌ MQTT connection refused — is Mosquitto running?")
+        print(f"   → sudo systemctl status mosquitto")
+        return None
+    except OSError as e:
+        print(f"❌ MQTT network error: {e}")
+        print(f"   → Check MQTT_HOST='{MQTT_HOST}' and MQTT_PORT={MQTT_PORT}")
+        return None
+    except Exception as e:
+        print(f"❌ MQTT unexpected error: {e}")
+        return None
+
+    return client
+
+# ── Main ──────────────────────────────────────────────────
 def main():
     global running
 
     parser = argparse.ArgumentParser(description="STM32 ADXL345 Bridge")
-    parser.add_argument("-t", "--tty", help="Serial port (e.g., /dev/ttyUSB0)")
+    parser.add_argument("-t", "--tty",   help="Serial port (e.g., /dev/ttyUSB0)")
     parser.add_argument("-d", "--debug", action="store_true", help="Debug: print unparsed lines")
     args = parser.parse_args()
     option = 'd' if args.debug else None
@@ -134,22 +188,18 @@ def main():
     print("STM32 ADXL345 Bridge Starting...")
     print("====================================")
 
+    # ── Serial port ───────────────────────────────────────
     if args.tty:
         port = args.tty
-        print(f"\nUsing specified port: {port}")
+        print(f"Using specified port: {port}")
     else:
-        # Find STM32 serial port
         print("\n🔍 Detecting STM32 serial port...")
         port = find_stm32_port()
-
         if not port:
-            print(" Could not find STM32 port. Please specify manually:")
-            port = input("Enter serial port (e.g., /dev/ttyUSB0): ").strip()
-    
-    # Connect to serial
+            print("❌ Could not find STM32 port. Use -t /dev/ttyUSB0 to specify manually.")
+            return
+
     try:
-        # TODO: Create server on port 1234 and read data instead of serial port
-        #
         ser = serial.Serial(
             port=port,
             baudrate=BAUD_RATE,
@@ -158,83 +208,78 @@ def main():
             stopbits=serial.STOPBITS_ONE,
             bytesize=serial.EIGHTBITS
         )
-        print(f" Connected to STM32 on {port} at {BAUD_RATE} baud")
-    except Exception as e:
-        print(f" Failed to open serial port: {e}")
+        print(f"✅ Connected to STM32 on {port} at {BAUD_RATE} baud")
+    except serial.SerialException as e:
+        print(f"❌ Failed to open serial port '{port}': {e}")
+        print(f"   → Check device is connected: ls /dev/ttyUSB* /dev/ttyACM*")
+        print(f"   → Check permissions: sudo usermod -aG dialout $USER")
         return
-    
-    # Connect to MQTT
-    client = mqtt.Client()
-    try:
-        client.connect(MQTT_HOST, MQTT_PORT, 60)
-        client.loop_start()
-        print(f" Connected to MQTT broker at {MQTT_HOST}:{MQTT_PORT}")
     except Exception as e:
-        print(f" Failed to connect to MQTT: {e}")
+        print(f"❌ Unexpected serial error: {e}")
+        return
+
+    # ── MQTT ──────────────────────────────────────────────
+    client = create_mqtt_client()
+    if client is None:
         ser.close()
         return
-    
-    print("\n Reading accelerometer data...")
+
+    print("\n📊 Reading accelerometer data...")
     print("Press Ctrl+C to stop\n")
-    
+
     sample_count = 0
-    
+
     while running:
         try:
-            # Read line from STM32
             line = ser.readline().decode('utf-8', errors='ignore').strip()
-            
+
             if line:
-                # Parse accelerometer values
                 result = parse_accelerometer_data(line, option)
-                
+
                 if result:
                     x_g, y_g, z_g, x_raw, y_raw, z_raw = result
-                    peak_g = calculate_peak_g(x_g, y_g, z_g)
+                    peak_g   = calculate_peak_g(x_g, y_g, z_g)
                     severity = determine_severity(peak_g)
-                    
-                    # Create MQTT payload
+
                     payload = {
-                        "timestamp": (datetime.utcnow() + timedelta(hours=5, minutes=30)).isoformat() ,
-                        "x": round(x_g, 3),
-                        "y": round(y_g, 3),
-                        "z": round(z_g, 3),
-                        "x_raw": x_raw,
-                        "y_raw": y_raw,
-                        "z_raw": z_raw,
-                        "peak_g": round(peak_g, 3),
-                        "severity": severity,
+                        "timestamp": (datetime.utcnow() + timedelta(hours=5, minutes=30)).isoformat(),
+                        "x":         round(x_g, 3),
+                        "y":         round(y_g, 3),
+                        "z":         round(z_g, 3),
+                        "x_raw":     x_raw,
+                        "y_raw":     y_raw,
+                        "z_raw":     z_raw,
+                        "peak_g":    round(peak_g, 3),
+                        "severity":  severity,
                         "device_id": "stm32_adxl345",
-                        "sample_rate": 10  # Your STM32 delay is ~2M cycles
+                        "sample_rate": 10
                     }
-                    
-                    # Publish to MQTT
-                    client.publish(MQTT_TOPIC, json.dumps(payload))
-                    
-                    # Print to console with color
+
+                    result_pub = client.publish(MQTT_TOPIC, json.dumps(payload), qos=1)
+                    if result_pub.rc != mqtt.MQTT_ERR_SUCCESS:
+                        print(f"⚠️  Publish failed (rc={result_pub.rc}) — broker may have disconnected")
+
                     sample_count += 1
                     timestamp = datetime.now().strftime("%H:%M:%S")
-                    
+
                     if severity != "NORMAL":
-                        # Highlight impacts in red
-                        print(f"[{timestamp}] X:{x_g:6.3f}g ({x_raw:5d}) Y:{y_g:6.3f}g ({y_raw:5d}) Z:{z_g:6.3f}g ({z_raw:5d}) | Peak:{peak_g:6.3f}g | {severity}")
+                        print(f"[{timestamp}] ⚠️  X:{x_g:6.3f}g Y:{y_g:6.3f}g Z:{z_g:6.3f}g | Peak:{peak_g:6.3f}g | {severity}")
                     else:
                         print(f"[{timestamp}] X:{x_g:6.3f} Y:{y_g:6.3f} Z:{z_g:6.3f} | Peak:{peak_g:6.3f}g")
-                    
-            # Small sleep to prevent CPU hogging
+
             time.sleep(0.001)
-            
+
         except serial.SerialException as e:
-            print(f" Serial error: {e}")
+            print(f"❌ Serial error: {e}")
             break
         except KeyboardInterrupt:
             break
         except Exception as e:
-            print(f" Error: {e}")
+            print(f"⚠️  Error: {e}")
             continue
-    
-    # Cleanup
-    print("\n Cleaning up...")
+
+    # ── Cleanup ───────────────────────────────────────────
+    print("\n🧹 Cleaning up...")
     client.loop_stop()
     client.disconnect()
     ser.close()
