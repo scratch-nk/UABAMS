@@ -74,8 +74,9 @@ const processAccelerometerData = async (data, topic) => {
 
         console.log('✅ Data stored in monitoring_data');
 
-        // Check if it's an impact (peak_g > 2)
-        if (data.peak_g > 2) {
+        // Check if it's an impact
+        const impactThreshold = parseFloat(process.env.IMPACT_THRESHOLD) || 0.01;
+        if (data.peak_g > impactThreshold) {
             const result = await pool.query(`
                 INSERT INTO accelerometer_events 
                 (timestamp, peak_g, severity, x_axis, y_axis, z_axis, device_id)
