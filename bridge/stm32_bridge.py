@@ -18,8 +18,10 @@ from datetime import datetime, timedelta
 # ── MQTT Configuration ────────────────────────────────────
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
-MQTT_USER = "mqtt_user"   # Set to None to disable authentication
-MQTT_PASS = "scratch2026"  # Set to None to disable authentication
+# MQTT_USER = "mqtt_user"   # Set to None to disable authentication
+# MQTT_PASS = "scratch2026"  # Set to None to disable authentication
+MQTT_USER = ""   # Set to None to disable authentication
+MQTT_PASS = ""  # Set to None to disable authentication
 
 MQTT_TOPIC_ACCL = "adj/datalogger/sensors/accelerometer"
 MQTT_TOPIC_GPS  = "adj/datalogger/sensors/gps"
