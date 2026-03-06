@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  AreaChart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -51,7 +51,7 @@ const AccelerometerGraph = () => {
   };
 
   return (
-    <Box>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
         <FormControl size="small" sx={{ minWidth: 120 }}>
           <Select
@@ -67,60 +67,24 @@ const AccelerometerGraph = () => {
       </Box>
 
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
+        <LineChart
           data={data}
           margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
         >
-          <defs>
-            <linearGradient id="colorX" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
-              <stop offset="95%" stopColor="#8884d8" stopOpacity={0.2}/>
-            </linearGradient>
-            <linearGradient id="colorY" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8}/>
-              <stop offset="95%" stopColor="#82ca9d" stopOpacity={0.2}/>
-            </linearGradient>
-            <linearGradient id="colorZ" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#ffc658" stopOpacity={0.8}/>
-              <stop offset="95%" stopColor="#ffc658" stopOpacity={0.2}/>
-            </linearGradient>
-          </defs>
-          
           <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-          <XAxis 
-            dataKey="bucket" 
+          <XAxis
+            dataKey="bucket"
             tickFormatter={(time) => new Date(time).toLocaleTimeString()}
             stroke="#888"
           />
           <YAxis stroke="#888" domain={['auto', 'auto']} />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
-          
-          <Area 
-            type="monotone" 
-            dataKey="avg_x" 
-            name="X-Axis"
-            stroke="#8884d8" 
-            fillOpacity={1}
-            fill="url(#colorX)" 
-          />
-          <Area 
-            type="monotone" 
-            dataKey="avg_y" 
-            name="Y-Axis"
-            stroke="#82ca9d" 
-            fillOpacity={1}
-            fill="url(#colorY)" 
-          />
-          <Area 
-            type="monotone" 
-            dataKey="avg_z" 
-            name="Z-Axis"
-            stroke="#ffc658" 
-            fillOpacity={1}
-            fill="url(#colorZ)" 
-          />
-        </AreaChart>
+
+          <Line type="monotone" dataKey="avg_x" name="X-Axis" stroke="#8884d8" dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="avg_y" name="Y-Axis" stroke="#82ca9d" dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="avg_z" name="Z-Axis" stroke="#ffc658" dot={false} isAnimationActive={false} />
+        </LineChart>
       </ResponsiveContainer>
     </Box>
   );

@@ -9,30 +9,6 @@ import {
   IconButton,
   Tooltip
 } from '@mui/material';
-
-// Error boundary to isolate react-leaflet (requires React 18, installed React 19)
-class MapErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(error) {
-    console.warn('Map render failed (react-leaflet/React 19 incompatibility):', error.message);
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography color="textSecondary">Map unavailable — upgrade react-leaflet to v5 for React 19</Typography>
-        </Box>
-      );
-    }
-    return this.props.children;
-  }
-}
 import RefreshIcon from '@mui/icons-material/Refresh';
 import WarningIcon from '@mui/icons-material/Warning';
 import SpeedIcon from '@mui/icons-material/Speed';
@@ -66,7 +42,8 @@ const Monitoring = () => {
       setLatestRawData(data.data);
       setRawDataHistory(prev => [...prev.slice(-99), data.data]);
       
-      if (data.data?.peak_g > 2) {
+      const impactThreshold = parseFloat(import.meta.env.VITE_IMPACT_THRESHOLD) || 0.01;
+      if (data.data?.peak_g > impactThreshold) {
         const newImpact = {
           id: Date.now(),
           timestamp: data.data.timestamp,
@@ -232,17 +209,9 @@ const Monitoring = () => {
 
         {/* Right Column - Maps and Graphs */}
         <Grid item xs={12} md={7}>
-          {/* Map */}
-          <Paper sx={{ p: 2, height: '400px', mb: 3 }}>
-            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <LocationOnIcon color="primary" />
-              Geolocation Map
-            </Typography>
-            <Box sx={{ height: 'calc(100% - 40px)' }}>
-              <MapErrorBoundary>
-                <GeolocationMap impacts={impacts} />
-              </MapErrorBoundary>
-            </Box>
+          {/* Raw Values History Chart */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <RawValueChart data={rawDataHistory} />
           </Paper>
 
           {/* Accelerometer Graph */}
@@ -260,10 +229,17 @@ const Monitoring = () => {
             <RawValueDisplay data={latestRawData} />
           </Paper>
 
-          {/* Raw Values History Chart */}
-          <Paper sx={{ p: 2, mb: 3 }}>
-            <RawValueChart data={rawDataHistory} />
+          {/* Map */}
+          <Paper sx={{ p: 2, height: '400px', mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LocationOnIcon color="primary" />
+              Geolocation Map
+            </Typography>
+            <Box sx={{ height: 'calc(100% - 40px)' }}>
+              <GeolocationMap impacts={impacts} />
+            </Box>
           </Paper>
+
 
           {/* Speed Graph and Comfort Index */}
           <Grid container spacing={2}>
