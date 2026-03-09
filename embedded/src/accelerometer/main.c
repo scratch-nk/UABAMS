@@ -1,7 +1,10 @@
 #include "stm32f4xx.h"
+#include "boot_info.h"
 #include "spi.h"
 #include "spi_eth.h"
 #include "adxl345.h"
+#include "accelerometer_health.h"
+#include "ethernet_health.h"
 #include "w5500.h"
 #include "usart_debug.h"
 #include "delay.h"
@@ -14,6 +17,12 @@
 #define WINDOW_MS    500
 #define SAMPLE_COUNT (FS_HZ * WINDOW_MS / 1000)
 #define EVENT_TH     2.0f
+uint8_t tcp_connected = 0;
+
+static float s1_x[SAMPLE_COUNT];
+static float s1_z[SAMPLE_COUNT];
+static float s2_x[SAMPLE_COUNT];
+static float s2_z[SAMPLE_COUNT];
 
 // TCP IP
 /* -- nk REVISIT:  MAC, IPs all hard-coded? MAC should be got from firmware?
@@ -24,18 +33,6 @@ uint8_t ip[]        = {192,168,1,10};
 uint8_t sn[]        = {255,255,255,0};
 uint8_t gw[]        = {0,0,0,0};
 uint8_t server_ip[] = {192,168,1,100};
-
-
-  
-    /* -- nk
-    volatile uint32_t ms_ticks = 0;
-
-    void SysTick_Handler(void)
-    {
-        ms_ticks++;
-    }
-    */
-
 
 
 const char* vib_level(float peak)
@@ -52,11 +49,23 @@ void UBMS_Send_TCP(char *data)
     W5500_Send(0, (uint8_t *)data, strlen(data));
 }
 
+void TCP_Task(void)
+{
+    uint8_t status = W5500_GetSocketStatus(0);
+    if (status == 0x17)
+    {
+        tcp_connected = 1;
+    }
+    else
+    {
+        tcp_connected = 0;
+        // reconnect try
+        W5500_TCP_Client_Connect(0, server_ip, 5000);
+    }
+}
 
 int main(void)
 {
-    float s1_x[SAMPLE_COUNT], s1_z[SAMPLE_COUNT];
-    float s2_x[SAMPLE_COUNT], s2_z[SAMPLE_COUNT];
     float x1,y1,z1, x2,y2,z2;
 
     float s1_rms_v, s1_rms_l, s2_rms_v, s2_rms_l;
@@ -64,10 +73,21 @@ int main(void)
     float s1_peak,  s2_peak;
 
     char tcp_buf[512];
-
+   
     USART2_Init();
+    print_boot_info("DATA LOGGER UNIT");
+    usart_debug("SYSTEM INITIALIZATION...\r\n");
     spi1_init();          // ADXL SPI
-    SPI2_Init();          // W5500 SPI
+
+sensor_spi_health_check();
+sensor_max_range_check(1);
+sensor_max_range_check(2);
+sensor_static_check();
+ 
+SPI2_Init();          // W5500 SPI
+spi2_w5500_check();
+ethernet_hardware_check();
+
     SysTick_Config(SystemCoreClock / 1000);
     usart_debug("\r\nDATA LOGGER BOOT\r\n");
 
@@ -82,9 +102,8 @@ int main(void)
     W5500_TCP_Client_Connect(0, server_ip, 5000);
 
     /* -- nk. REVISIT  Bug: Waits on sockets forever */
-    while (W5500_GetSocketStatus(0) != 0x17);
-
-    usart_debug("TCP CONNECTED\r\n");
+  //  while (W5500_GetSocketStatus(0) != 0x17);
+   // usart_debug("TCP CONNECTED\r\n");
 
     usart_debug("\r\n========================================\r\n");
         usart_debug("UBMS AXLE BOX MONITORING SYSTEM\r\n");
@@ -98,6 +117,9 @@ int main(void)
 
     while (1)
     {
+
+        TCP_Task(); 
+
         float sum_z1 = 0, sum_x1 = 0;
         float sum_z2 = 0, sum_x2 = 0;
         float sumsq_z1 = 0, sumsq_x1 = 0;
@@ -250,7 +272,15 @@ int main(void)
         }
 
         usart_debug("UBMS PACKET SENT\r\n");
-        // usart_debug(tcp_buf);
-        // UBMS_Send_TCP(tcp_buf);
+
+     if (tcp_connected)
+    {
+        usart_debug("TCP_Connected --------------------------------------");
+       // UBMS_Send_TCP(tcp_buf);
+    }
+    else{
+
+        usart_debug("TCP_NOT _Connected ----------------------------------");
+    }
     }
 }

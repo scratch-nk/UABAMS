@@ -9,7 +9,8 @@ SRC = \
  i2c.c \
  spi.c \
  gps.c \
- adxl345.c
+ adxl345.c \
+ accelerometer_health.c
 
 OBJDIR = obj
 COMMON_OBJ = $(wildcard ../common/obj/*.o)

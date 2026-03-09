@@ -7,6 +7,7 @@ INCLUDES = -I$(PROJECT_ROOT)/include/cmsis/Include -I$(PROJECT_ROOT)/include
 SRC = \
  spi.c \
  gps.c \
+ gps_health.c \
  sd.c \
  main.c
 

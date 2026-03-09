@@ -78,3 +78,5 @@ uint8_t spi1_txrx(uint8_t data)
     while (!(SPI1->SR & SPI_SR_RXNE));
     return SPI1->DR;
 }
+
+

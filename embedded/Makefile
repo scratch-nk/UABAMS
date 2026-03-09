@@ -14,8 +14,10 @@ COMMON_OBJDIR = $(COMMON_DIR)/obj
 
 COMMON_SRC = \
  usart_debug.c \
+ boot_info.c \
  spi2.c \
  w5500.c \
+ ethernet_health.c \
  delay.c \
  system_stm32f4xx.c \
  startup.s \

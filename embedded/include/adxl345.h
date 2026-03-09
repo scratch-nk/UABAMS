@@ -28,6 +28,9 @@ void adxl345_read_xyz_spi(uint8_t sensor,
                           float *y,
                           float *z);
 
+uint8_t adxl345_read_device_id(uint8_t sensor);
+uint8_t adxl345_read_register(uint8_t sensor, uint8_t reg);
+
 
 
 #endif

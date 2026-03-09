@@ -31,6 +31,27 @@ static inline void adxl_cs_deselect(uint8_t sensor)
    LOW LEVEL SPI ACCESS
    ===================================================== */
 
+   uint8_t adxl345_read_device_id(uint8_t sensor)
+{
+    uint8_t id;
+
+    if(sensor == 1)
+        GPIOA->ODR &= ~(1 << 4);   // CS1 LOW
+    else
+        GPIOA->ODR &= ~(1 << 1);   // CS2 LOW
+
+    spi1_txrx(0x80 | 0x00);  // READ + register 0x00
+    id = spi1_txrx(0xFF);
+
+    if(sensor == 1)
+        GPIOA->ODR |= (1 << 4);   // CS1 HIGH
+    else
+        GPIOA->ODR |= (1 << 1);   // CS2 HIGH
+
+    return id;
+}
+
+
 static uint8_t adxl_spi_read(uint8_t sensor, uint8_t reg)
 {
     uint8_t val;
@@ -113,4 +134,24 @@ void adxl345_read_xyz_spi(uint8_t sensor,
     *x = rx * ADXL_SCALE;
     *y = ry * ADXL_SCALE;
     *z = rz * ADXL_SCALE;
+}
+
+uint8_t adxl345_read_register(uint8_t sensor, uint8_t reg)
+{
+    uint8_t value;
+
+    if(sensor == 1)
+        GPIOA->ODR &= ~(1 << 4);   // CS1 LOW
+    else
+        GPIOA->ODR &= ~(1 << 1);   // CS2 LOW
+
+    spi1_txrx(0x80 | reg);   // READ command
+    value = spi1_txrx(0xFF);
+
+    if(sensor == 1)
+        GPIOA->ODR |= (1 << 4);   // CS1 HIGH
+    else
+        GPIOA->ODR |= (1 << 1);   // CS2 HIGH
+
+    return value;
 }
