@@ -2,7 +2,7 @@
 TOOLCHAIN_PREFIX ?= /usr/local/bin/gcc-arm-none-eabi-10.3-2021.10/bin/
 export CC      = $(TOOLCHAIN_PREFIX)arm-none-eabi-gcc
 export OBJCOPY = $(TOOLCHAIN_PREFIX)arm-none-eabi-objcopy
-export MCU     = -mcpu=cortex-m4 -mthumb
+export MCU     = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
 export DEFS    = -DSTM32F411xE
 export CFLAGS  = $(MCU) -O0 -g -Wall -ffreestanding $(DEFS) -u _printf_float
 export LDFLAGS_COMMON = -nostdlib -lc -lm -lgcc -lnosys
