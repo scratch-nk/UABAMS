@@ -54,9 +54,19 @@
 #define configKERNEL_INTERRUPT_PRIORITY         (configLIBRARY_LOWEST_INTERRUPT_PRIORITY << 4)
 #define configMAX_SYSCALL_INTERRUPT_PRIORITY    (configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << 4)
 
+/* ── ISR name aliases ────────────────────────────────────────────────────── *
+ * FreeRTOS ARM_CM4F port uses names vPortSVCHandler / xPortPendSVHandler.   *
+ * startup.s has SVC_Handler and PendSV_Handler as weak → Default_Handler.   *
+ * These macros rename the port symbols so the linker overrides the weaks.   *
+ * SysTick_Handler is NOT aliased here — it is a combined handler in main.c  *
+ * that calls xPortSysTickHandler() directly.                                 */
+#define vPortSVCHandler     SVC_Handler
+#define xPortPendSVHandler  PendSV_Handler
+
 /* ── Optional API ───────────────────────────────────────────────────────── */
 #define INCLUDE_vTaskDelay                      1
 #define INCLUDE_vTaskDelayUntil                 1
+#define INCLUDE_vTaskDelete                     1
 #define INCLUDE_uxTaskGetStackHighWaterMark     1
 #define INCLUDE_xTaskGetTickCount               1
 

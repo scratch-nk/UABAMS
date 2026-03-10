@@ -21,6 +21,7 @@ CFLAGS_LOCAL = $(CFLAGS) -DCPU_CLOCK_MHZ=$(CPU_CLOCK_MHZ)
 # ── Project sources ────────────────────────────────────────────────────────────
 SRC = \
     main.c \
+    health.c \
     i2c.c \
     spi.c \
     gps.c \
