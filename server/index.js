@@ -38,7 +38,7 @@ const mqttClient = mqtt.connect('mqtt://192.168.0.125:1883');
 
 mqttClient.on('connect', () => {
     console.log("MQTT Connected");
-    mqttClient.subscribe('adj/datalogger/#');
+    mqttClient.subscribe('sensor/railway/accelerometer/stm32');
 });
 
 // =============================
