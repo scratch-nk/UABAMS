@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
-// Pages
+// Import your pages
 import Dashboard from './pages/Dashboard';
 import Monitoring from './pages/Monitoring';
 import Events from './pages/Events';
@@ -12,8 +12,10 @@ import Map from './pages/Map';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 
-// Components
-import Layout from './components/Layout/MainLayout';
+// Import the new Topbar Layout
+import TopbarLayout from './components/Layout/TopbarLayout';
+
+// Import your context providers
 import { AlertProvider } from './context/AlertContext';
 
 const theme = createTheme({
@@ -32,9 +34,6 @@ const theme = createTheme({
   },
   typography: {
     fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-    h6: {
-      fontWeight: 600,
-    },
   },
 });
 
@@ -44,7 +43,7 @@ function App() {
       <CssBaseline />
       <AlertProvider>
         <Router>
-          <Layout>
+          <TopbarLayout>  {/* This wraps all pages with the topbar */}
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
@@ -55,7 +54,7 @@ function App() {
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
-          </Layout>
+          </TopbarLayout>
         </Router>
       </AlertProvider>
     </ThemeProvider>
