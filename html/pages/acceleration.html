@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceleration - RailMonitor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f8fafc;
+            padding: 24px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            background: white;
+            padding: 20px 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            border: 1px solid #e2e8f0;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            color: #1e293b;
+        }
+
+        .header p {
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f0fdf4;
+            color: #16a34a;
+            padding: 8px 16px;
+            border-radius: 30px;
+            font-weight: 500;
+        }
+
+        .status-badge i {
+            font-size: 0.6rem;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            display: flex;
+            gap: 20px;
+            background: white;
+            padding: 16px 24px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .toolbar-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #1e293b;
+            padding-right: 20px;
+            border-right: 1px solid #e2e8f0;
+        }
+
+        .toolbar-item:last-child {
+            border-right: none;
+        }
+
+        .toolbar-item i {
+            color: #22c55e;
+        }
+
+        /* Channel Grid */
+        .channel-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .channel-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .channel-card:hover {
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .channel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .channel-header h3 {
+            font-size: 1.2rem;
+            color: #1e293b;
+        }
+
+        .channel-tag {
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .tag-vert {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .tag-lat {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .current-value {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .current-value .label {
+            color: #64748b;
+            font-size: 0.85rem;
+        }
+
+        .current-value .value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: #1e293b;
+            line-height: 1;
+        }
+
+        .current-value .unit {
+            color: #64748b;
+            margin-left: 4px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            background: #f8fafc;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .stat-label {
+            display: block;
+            font-size: 0.7rem;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .chart-wrapper {
+            height: 100px;
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        /* Main Graph */
+        .graph-section {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .graph-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .graph-header h2 {
+            font-size: 1.3rem;
+            color: #1e293b;
+        }
+
+        .graph-header h2 i {
+            color: #22c55e;
+            margin-right: 8px;
+        }
+
+        .graph-container {
+            height: 300px;
+            width: 100%;
+        }
+
+        /* Metrics Bar */
+        .metrics-bar {
+            display: flex;
+            gap: 24px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px 24px;
+        }
+
+        .metric-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .metric-icon {
+            width: 40px;
+            height: 40px;
+            background: #f1f5f9;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #22c55e;
+        }
+
+        .metric-content {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+
+        .metric-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .metric-unit {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-left: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <h1>Acceleration Monitoring</h1>
+                <p>Real-time channel data with interactive visualization</p>
+            </div>
+            <div class="status-badge">
+                <i class="fas fa-circle"></i>
+                <span>LIVE STREAMING</span>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-item">
+                <i class="fas fa-ruler"></i>
+                <span>Range: 0-2000m</span>
+            </div>
+            <div class="toolbar-item">
+                <i class="fas fa-wave-square"></i>
+                <span>Frequency: 100Hz</span>
+            </div>
+            <div class="toolbar-item">
+                <i class="fas fa-filter"></i>
+                <span>Filter: LP 50Hz</span>
+            </div>
+        </div>
+
+        <!-- Channel Cards -->
+        <div class="channel-grid" id="channelGrid"></div>
+
+        <!-- Main Graph -->
+        <div class="graph-section">
+            <div class="graph-header">
+                <h2><i class="fas fa-chart-line"></i> Real-time Waveform</h2>
+            </div>
+            <div class="graph-container">
+                <canvas id="mainChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Metrics Bar -->
+        <div class="metrics-bar" id="metricsBar"></div>
+    </div>
+
+    <script>
+        // Channel configurations
+        const channels = [
+            { id: 'ablvert', name: 'AB-L-VERT', color: '#22c55e', type: 'vert', amp: 2.5, freq: 0.5, phase: 0 },
+            { id: 'abllat', name: 'AB-L-LAT', color: '#eab308', type: 'lat', amp: 0.6, freq: 0.7, phase: 1.2 },
+            { id: 'abrvert', name: 'AB-R-VERT', color: '#ef4444', type: 'vert', amp: 0.2, freq: 0.4, phase: 2.5 },
+            { id: 'abrlat', name: 'AB-R-LAT', color: '#8b5cf6', type: 'lat', amp: 0.1, freq: 0.9, phase: 3 }
+        ];
+
+        let chartInstance;
+        let phaseRef = 0;
+        const channelData = {};
+
+        // Initialize data
+        channels.forEach(ch => {
+            channelData[ch.id] = Array(30).fill(0).map((_, i) => 
+                ch.amp * Math.sin(2 * Math.PI * ch.freq * (i + phaseRef) + ch.phase)
+            );
+        });
+
+        // Render channel cards
+        function renderChannels() {
+            const grid = document.getElementById('channelGrid');
+            grid.innerHTML = channels.map(ch => {
+                const lastValue = channelData[ch.id][29].toFixed(2);
+                const min = Math.min(...channelData[ch.id]).toFixed(2);
+                const max = Math.max(...channelData[ch.id]).toFixed(2);
+                const avg = (channelData[ch.id].reduce((a,b) => a+b, 0) / 30).toFixed(2);
+                
+                return `
+                    <div class="channel-card">
+                        <div class="channel-header">
+                            <h3>${ch.name}</h3>
+                            <span class="channel-tag tag-${ch.type}">${ch.type === 'vert' ? 'Vertical' : 'Lateral'}</span>
+                        </div>
+                        <div class="current-value">
+                            <span class="label">Current</span>
+                            <span class="value" id="val-${ch.id}">${lastValue}</span>
+                            <span class="unit">m/s²</span>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Min</span>
+                                <span class="stat-value" id="min-${ch.id}">${min}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Max</span>
+                                <span class="stat-value" id="max-${ch.id}">${max}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Avg</span>
+                                <span class="stat-value" id="avg-${ch.id}">${avg}</span>
+                            </div>
+                        </div>
+                        <div class="chart-wrapper">
+                            <canvas id="spark-${ch.id}"></canvas>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Initialize sparklines
+            channels.forEach(ch => {
+                const canvas = document.getElementById(`spark-${ch.id}`);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: Array(30).fill(''),
+                        datasets: [{
+                            data: channelData[ch.id],
+                            borderColor: ch.color,
+                            borderWidth: 2,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: false, tooltip: false },
+                        scales: { x: { display: false }, y: { display: false } }
+                    }
+                });
+            });
+        }
+
+        // Render metrics bar
+        function renderMetrics() {
+            const bar = document.getElementById('metricsBar');
+            bar.innerHTML = channels.map(ch => `
+                <div class="metric-item">
+                    <div class="metric-icon"><i class="fas fa-chart-line"></i></div>
+                    <div class="metric-content">
+                        <span class="metric-label">${ch.name}</span>
+                        <span class="metric-value" id="metric-${ch.id}">${channelData[ch.id][29].toFixed(2)}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Initialize main chart
+        function initMainChart() {
+            const ctx = document.getElementById('mainChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array(30).fill(0).map((_, i) => (1392 + i * 0.1).toFixed(1) + ' km'),
+                    datasets: channels.map(ch => ({
+                        label: ch.name,
+                        data: channelData[ch.id],
+                        borderColor: ch.color,
+                        borderWidth: 2,
+                        tension: 0.4,
+                        pointRadius: 2
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y: { min: -3, max: 3, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        // Update data periodically
+        setInterval(() => {
+            phaseRef += 1;
+            channels.forEach(ch => {
+                const newVal = ch.amp * Math.sin(2 * Math.PI * ch.freq * (phaseRef + 29) + ch.phase);
+                channelData[ch.id] = [...channelData[ch.id].slice(1), newVal];
+
+                // Update displayed values
+                document.getElementById(`val-${ch.id}`).textContent = newVal.toFixed(2);
+                document.getElementById(`metric-${ch.id}`).textContent = newVal.toFixed(2);
+                
+                const min = Math.min(...channelData[ch.id]).toFixed(2);
+                const max = Math.max(...channelData[ch.id]).toFixed(2);
+                const avg = (channelData[ch.id].reduce((a,b) => a+b, 0) / 30).toFixed(2);
+                
+                document.getElementById(`min-${ch.id}`).textContent = min;
+                document.getElementById(`max-${ch.id}`).textContent = max;
+                document.getElementById(`avg-${ch.id}`).textContent = avg;
+            });
+
+            if (chartInstance) {
+                chartInstance.data.datasets.forEach((ds, i) => {
+                    ds.data = channelData[channels[i].id];
+                });
+                chartInstance.update();
+            }
+        }, 1000);
+
+        // Initialize
+        renderChannels();
+        renderMetrics();
+        initMainChart();
+    </script>
+</body>
+</html>

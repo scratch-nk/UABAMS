@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graphs - RailMonitor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f8fafc;
+            padding: 24px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2rem;
+            color: #1e293b;
+            margin-bottom: 24px;
+        }
+
+        .graphs-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+        }
+
+        .graph-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .graph-card.full-width {
+            grid-column: span 2;
+        }
+
+        .graph-card h2 {
+            font-size: 1.2rem;
+            color: #1e293b;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .graph-card h2 i {
+            color: #22c55e;
+        }
+
+        .chart-container {
+            height: 300px;
+            width: 100%;
+        }
+
+        .small-chart {
+            height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Acceleration Graphs</h1>
+
+        <div class="graphs-grid">
+            <div class="graph-card full-width">
+                <h2><i class="fas fa-chart-line"></i> 24-Hour Sensor Performance</h2>
+                <div class="chart-container">
+                    <canvas id="sensorChart"></canvas>
+                </div>
+            </div>
+
+            <div class="graph-card">
+                <h2><i class="fas fa-chart-pie"></i> Impact Distribution</h2>
+                <div class="small-chart">
+                    <canvas id="pieChart"></canvas>
+                </div>
+            </div>
+
+            <div class="graph-card">
+                <h2><i class="fas fa-chart-bar"></i> Severity Breakdown</h2>
+                <div class="small-chart">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sensor Chart
+        new Chart(document.getElementById('sensorChart'), {
+            type: 'line',
+            data: {
+                labels: Array(24).fill(0).map((_, i) => `${i}:00`),
+                datasets: [
+                    { label: 'X-Axis', data: Array(24).fill(0).map(() => Math.random() * 2 + 1), borderColor: '#ef4444' },
+                    { label: 'Y-Axis', data: Array(24).fill(0).map(() => Math.random() * 2 + 0.5), borderColor: '#3b82f6' },
+                    { label: 'Z-Axis', data: Array(24).fill(0).map(() => Math.random() * 2 + 1.5), borderColor: '#22c55e' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        // Pie Chart
+        new Chart(document.getElementById('pieChart'), {
+            type: 'doughnut',
+            data: {
+                labels: ['High', 'Medium', 'Low'],
+                datasets: [{
+                    data: [23, 45, 88],
+                    backgroundColor: ['#ef4444', '#f59e0b', '#22c55e']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        // Bar Chart
+        new Chart(document.getElementById('barChart'), {
+            type: 'bar',
+            data: {
+                labels: ['High', 'Medium', 'Low'],
+                datasets: [{
+                    data: [23, 45, 88],
+                    backgroundColor: ['#ef4444', '#f59e0b', '#22c55e']
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Threshold Configuration - RailMonitor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background: #f8fafc;
+            padding: 24px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 2rem;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: #64748b;
+            margin-bottom: 32px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid;
+        }
+        .p1 { border-left-color: #f59e0b; }
+        .p2 { border-left-color: #ef4444; }
+        .p3 { border-left-color: #7f1d1d; }
+        .card h3 {
+            margin-bottom: 16px;
+            color: #1e293b;
+        }
+        .input-group {
+            margin-bottom: 16px;
+        }
+        .input-group label {
+            display: block;
+            color: #64748b;
+            margin-bottom: 4px;
+            font-size: 0.9rem;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #22c55e;
+        }
+        .btn-save {
+            background: #22c55e;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-save:hover {
+            background: #16a34a;
+        }
+        .success-message {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #166534;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 16px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Threshold Configuration</h1>
+        <p class="subtitle">Set priority thresholds for impact detection</p>
+
+        <div class="grid">
+            <!-- P1 Card -->
+            <div class="card p1">
+                <h3><i class="fas fa-chart-line" style="color: #f59e0b;"></i> P1 - Medium Priority</h3>
+                <div class="input-group">
+                    <label>Min Threshold (g)</label>
+                    <input type="number" id="p1Min" value="5" step="0.1" min="0">
+                </div>
+                <div class="input-group">
+                    <label>Max Threshold (g)</label>
+                    <input type="number" id="p1Max" value="10" step="0.1" min="0">
+                </div>
+            </div>
+
+            <!-- P2 Card -->
+            <div class="card p2">
+                <h3><i class="fas fa-exclamation-triangle" style="color: #ef4444;"></i> P2 - High Priority</h3>
+                <div class="input-group">
+                    <label>Min Threshold (g)</label>
+                    <input type="number" id="p2Min" value="10" step="0.1" min="0">
+                </div>
+                <div class="input-group">
+                    <label>Max Threshold (g)</label>
+                    <input type="number" id="p2Max" value="20" step="0.1" min="0">
+                </div>
+            </div>
+
+            <!-- P3 Card -->
+            <div class="card p3">
+                <h3><i class="fas fa-skull-crosswind" style="color: #7f1d1d;"></i> P3 - Critical Priority</h3>
+                <div class="input-group">
+                    <label>Min Threshold (g)</label>
+                    <input type="number" id="p3Min" value="20" step="0.1" min="0">
+                </div>
+                <div class="input-group">
+                    <label>Max Threshold (g)</label>
+                    <input type="text" id="p3Max" value="∞" disabled style="background: #f1f5f9;">
+                </div>
+            </div>
+        </div>
+
+        <button class="btn-save" onclick="saveThresholds()">
+            <i class="fas fa-save"></i> Save Configuration
+        </button>
+
+        <div id="successMessage" class="success-message">
+            <i class="fas fa-check-circle"></i> Thresholds saved successfully! The Acceleration Analysis page will now use these values.
+        </div>
+    </div>
+
+    <script>
+        function saveThresholds() {
+            // Get values
+            const thresholds = {
+                p1Min: document.getElementById('p1Min').value,
+                p1Max: document.getElementById('p1Max').value,
+                p2Min: document.getElementById('p2Min').value,
+                p2Max: document.getElementById('p2Max').value,
+                p3Min: document.getElementById('p3Min').value
+            };
+
+            // Validate
+            if (parseFloat(thresholds.p1Min) >= parseFloat(thresholds.p1Max)) {
+                alert('P1 min must be less than max');
+                return;
+            }
+            if (parseFloat(thresholds.p2Min) >= parseFloat(thresholds.p2Max)) {
+                alert('P2 min must be less than max');
+                return;
+            }
+            if (parseFloat(thresholds.p2Min) <= parseFloat(thresholds.p1Max)) {
+                alert('P2 min must be greater than P1 max (no overlap)');
+                return;
+            }
+            if (parseFloat(thresholds.p3Min) <= parseFloat(thresholds.p2Max)) {
+                alert('P3 min must be greater than P2 max (no overlap)');
+                return;
+            }
+
+            // Save to localStorage
+            localStorage.setItem('railmonitor_thresholds', JSON.stringify(thresholds));
+
+            // Show success message
+            const msg = document.getElementById('successMessage');
+            msg.style.display = 'block';
+            setTimeout(() => {
+                msg.style.display = 'none';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

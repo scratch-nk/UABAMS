@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceleration Analysis - RailMonitor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background: #f8fafc;
+            padding: 24px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .header h1 {
+            font-size: 2rem;
+            color: #1e293b;
+        }
+        .config-badge {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 30px;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .config-badge a {
+            color: #22c55e;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 500;
+        }
+        .threshold-bar {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 24px;
+        }
+        .threshold-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .dot-p1 { background: #f59e0b; }
+        .dot-p2 { background: #ef4444; }
+        .dot-p3 { background: #7f1d1d; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .stat-card .label {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        .stat-card .value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+        }
+        th {
+            background: #f8fafc;
+            padding: 16px;
+            text-align: left;
+            border-bottom: 2px solid #e2e8f0;
+            color: #1e293b;
+        }
+        td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #f1f5f9;
+            color: #334155;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .badge-p1 { background: #fef3c7; color: #92400e; }
+        .badge-p2 { background: #fee2e2; color: #b91c1c; }
+        .badge-p3 { background: #f1f5f9; color: #7f1d1d; font-weight: 700; }
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+        .btn-export {
+            background: #22c55e;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Acceleration Analysis</h1>
+            <div class="config-badge">
+                <span>Thresholds active</span>
+                <a href="configuration.html" target="_parent">
+                    <i class="fas fa-cog"></i> Configure
+                </a>
+            </div>
+        </div>
+
+        <!-- Threshold Display (Read-only) -->
+        <div class="threshold-bar" id="thresholdDisplay">
+            <!-- Populated by JavaScript -->
+        </div>
+
+        <!-- Statistics -->
+        <div class="stats-grid" id="statsDisplay">
+            <!-- Populated by JavaScript -->
+        </div>
+
+        <!-- Report Table -->
+        <table>
+            <thead>
+                <tr>
+                    <th>KM Location</th>
+                    <th>Peak (g)</th>
+                    <th>Priority</th>
+                    <th>Time Detected</th>
+                    <th>Recommended Action</th>
+                </tr>
+            </thead>
+            <tbody id="reportBody"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // Impact database
+        const impacts = [
+            { location: 'KM 1392+450', peak: 16.8, time: '2024-03-12 14:32:18' },
+            { location: 'KM 1395+120', peak: 15.2, time: '2024-03-12 13:15:22' },
+            { location: 'KM 1401+780', peak: 7.3, time: '2024-03-12 12:45:33' },
+            { location: 'KM 1412+210', peak: 22.5, time: '2024-03-12 11:20:45' },
+            { location: 'KM 1425+560', peak: 12.8, time: '2024-03-12 10:05:12' },
+            { location: 'KM 1438+330', peak: 8.9, time: '2024-03-12 09:30:45' },
+            { location: 'KM 1452+670', peak: 18.3, time: '2024-03-12 08:15:22' },
+            { location: 'KM 1467+890', peak: 4.2, time: '2024-03-12 07:45:33' },
+            { location: 'KM 1482+340', peak: 3.1, time: '2024-03-12 06:30:22' }
+        ];
+
+        // Default thresholds
+        let thresholds = {
+            p1Min: 5,
+            p1Max: 10,
+            p2Min: 10,
+            p2Max: 20,
+            p3Min: 20
+        };
+
+        // Load thresholds from configuration
+        function loadThresholds() {
+            const saved = localStorage.getItem('railmonitor_thresholds');
+            if (saved) {
+                thresholds = JSON.parse(saved);
+            }
+            updateDisplay();
+        }
+
+        // Get priority based on peak value
+        function getPriority(peak) {
+            if (peak > thresholds.p3Min) return { class: 'P3', name: 'Critical', badge: 'badge-p3' };
+            if (peak > thresholds.p2Min) return { class: 'P2', name: 'High', badge: 'badge-p2' };
+            if (peak > thresholds.p1Min) return { class: 'P1', name: 'Medium', badge: 'badge-p1' };
+            return null;
+        }
+
+        // Get action based on priority
+        function getAction(priority) {
+            switch(priority) {
+                case 'P3': return 'Immediate track inspection required';
+                case 'P2': return 'Schedule maintenance within 24 hours';
+                case 'P1': return 'Monitor and check within 72 hours';
+                default: return 'Review during next maintenance';
+            }
+        }
+
+        // Update threshold display
+        function updateThresholdDisplay() {
+            document.getElementById('thresholdDisplay').innerHTML = `
+                <div class="threshold-item">
+                    <span class="dot dot-p1"></span>
+                    <span>P1: ${thresholds.p1Min}g - ${thresholds.p1Max}g</span>
+                </div>
+                <div class="threshold-item">
+                    <span class="dot dot-p2"></span>
+                    <span>P2: ${thresholds.p2Min}g - ${thresholds.p2Max}g</span>
+                </div>
+                <div class="threshold-item">
+                    <span class="dot dot-p3"></span>
+                    <span>P3: > ${thresholds.p3Min}g</span>
+                </div>
+            `;
+        }
+
+        // Update statistics
+        function updateStats() {
+            const classified = impacts
+                .map(i => ({ ...i, priority: getPriority(i.peak) }))
+                .filter(i => i.priority);
+
+            const p1Count = classified.filter(i => i.priority.class === 'P1').length;
+            const p2Count = classified.filter(i => i.priority.class === 'P2').length;
+            const p3Count = classified.filter(i => i.priority.class === 'P3').length;
+
+            document.getElementById('statsDisplay').innerHTML = `
+                <div class="stat-card">
+                    <div class="label">P1 - Medium Priority</div>
+                    <div class="value">${p1Count}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">P2 - High Priority</div>
+                    <div class="value">${p2Count}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">P3 - Critical Priority</div>
+                    <div class="value">${p3Count}</div>
+                </div>
+            `;
+        }
+
+        // Update report table
+        function updateReport() {
+            const classified = impacts
+                .map(i => ({ ...i, priority: getPriority(i.peak) }))
+                .filter(i => i.priority)
+                .sort((a, b) => b.peak - a.peak);
+
+            if (classified.length === 0) {
+                document.getElementById('reportBody').innerHTML = `
+                    <tr>
+                        <td colspan="5" class="no-data">No impacts exceed current thresholds</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            document.getElementById('reportBody').innerHTML = classified.map(i => `
+                <tr>
+                    <td><strong>${i.location}</strong></td>
+                    <td>${i.peak.toFixed(1)} g</td>
+                    <td><span class="badge ${i.priority.badge}">${i.priority.class}</span></td>
+                    <td>${i.time}</td>
+                    <td>${getAction(i.priority.class)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Update all displays
+        function updateDisplay() {
+            updateThresholdDisplay();
+            updateStats();
+            updateReport();
+        }
+
+        // Listen for changes from configuration page
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'railmonitor_thresholds') {
+                loadThresholds();
+            }
+        });
+
+        // Initial load
+        loadThresholds();
+
+        // Check for updates every 2 seconds (in case of same tab)
+        setInterval(() => {
+            const saved = localStorage.getItem('railmonitor_thresholds');
+            if (saved) {
+                const newThresholds = JSON.parse(saved);
+                if (JSON.stringify(newThresholds) !== JSON.stringify(thresholds)) {
+                    thresholds = newThresholds;
+                    updateDisplay();
+                }
+            }
+        }, 2000);
+    </script>
+</body>
+</html>
