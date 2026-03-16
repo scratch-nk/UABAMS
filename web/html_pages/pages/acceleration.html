@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceleration Channels - RailMonitor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        body {
+            background: #f0f2f5;
+            padding: 24px;
+            color: #1e293b;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            color: #1e293b;
+            font-weight: 600;
+        }
+
+        .header p {
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            background: white;
+            padding: 8px 20px;
+            border-radius: 40px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .live-dot {
+            width: 10px;
+            height: 10px;
+            background: #22c55e;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .status-text {
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .timestamp {
+            color: #64748b;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            background: white;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 40px;
+            flex-wrap: wrap;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            background: #f0fdf4;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #22c55e;
+        }
+
+        .stat-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        /* Main Graph */
+        .graph-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+
+        .graph-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .graph-header h2 {
+            font-size: 1.3rem;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .graph-header h2 i {
+            color: #22c55e;
+        }
+
+        .graph-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .graph-btn {
+            padding: 8px 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .graph-btn:hover {
+            background: #f8fafc;
+            border-color: #22c55e;
+            color: #22c55e;
+        }
+
+        .graph-btn.active {
+            background: #22c55e;
+            color: white;
+            border-color: #22c55e;
+        }
+
+        .graph-btn.active:hover {
+            background: #16a34a;
+        }
+
+        .main-chart {
+            height: 500px;
+            width: 100%;
+            position: relative;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 30px;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 4px;
+            border-radius: 2px;
+        }
+
+        .color-ablvert { background: #22c55e; }
+        .color-abllat { background: #eab308; }
+        .color-abrvert { background: #ef4444; }
+        .color-abrlat { background: #8b5cf6; }
+
+        .legend-text {
+            font-size: 0.9rem;
+            color: #1e293b;
+        }
+
+        .legend-value {
+            font-weight: 600;
+            margin-left: 8px;
+            color: #1e293b;
+        }
+
+        /* Metrics Bar */
+        .metrics-bar {
+            background: white;
+            border-radius: 12px;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border: 1px solid #e2e8f0;
+        }
+
+        .metrics-left {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .metric-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .metric-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .dot-ablvert { background: #22c55e; }
+        .dot-abllat { background: #eab308; }
+        .dot-abrvert { background: #ef4444; }
+        .dot-abrlat { background: #8b5cf6; }
+
+        .metric-name {
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+
+        .metric-value {
+            font-weight: 600;
+            color: #1e293b;
+            margin-left: 4px;
+        }
+
+        .metrics-right {
+            color: #22c55e;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        @media (max-width: 768px) {
+            .graph-controls {
+                flex-wrap: wrap;
+            }
+            
+            .metrics-bar {
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div>
+                <h1>Acceleration Channels</h1>
+                <p>Combined waveform view</p>
+            </div>
+            <div class="status-badge">
+                <div class="live-dot"></div>
+                <span class="status-text">LIVE</span>
+                <span class="timestamp" id="currentTimestamp"></span>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="stat-icon"><i class="fas fa-chart-line"></i></div>
+                <div class="stat-info">
+                    <span class="stat-label">Sample Rate</span>
+                    <span class="stat-value">100 Hz</span>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-icon"><i class="fas fa-microchip"></i></div>
+                <div class="stat-info">
+                    <span class="stat-label">Active Channels</span>
+                    <span class="stat-value">4</span>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-icon"><i class="fas fa-chart-bar"></i></div>
+                <div class="stat-info">
+                    <span class="stat-label">Data Points</span>
+                    <span class="stat-value">1,024</span>
+                </div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                <div class="stat-info">
+                    <span class="stat-label">Last Update</span>
+                    <span class="stat-value" id="lastUpdate">0.2s ago</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Graph -->
+        <div class="graph-card">
+            <div class="graph-header">
+                <h2>
+                    <i class="fas fa-chart-line"></i>
+                    Combined Waveform - All Channels
+                </h2>
+                <div class="graph-controls">
+                    <button class="graph-btn active" onclick="setTimeRange('1h')">1H</button>
+                    <button class="graph-btn" onclick="setTimeRange('6h')">6H</button>
+                    <button class="graph-btn" onclick="setTimeRange('24h')">24H</button>
+                    <button class="graph-btn" onclick="setTimeRange('7d')">7D</button>
+                </div>
+            </div>
+            <div class="main-chart">
+                <canvas id="mainChart"></canvas>
+            </div>
+            
+            <!-- Legend with current values -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color color-ablvert"></div>
+                    <span class="legend-text">AB-L-VERT</span>
+                    <span class="legend-value" id="legend1">2.46 m/s²</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color color-abllat"></div>
+                    <span class="legend-text">AB-L-LAT</span>
+                    <span class="legend-value" id="legend2">0.64 m/s²</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color color-abrvert"></div>
+                    <span class="legend-text">AB-R-VERT</span>
+                    <span class="legend-value" id="legend3">0.46 m/s²</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color color-abrlat"></div>
+                    <span class="legend-text">AB-R-LAT</span>
+                    <span class="legend-value" id="legend4">0.10 m/s²</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Bar -->
+        <div class="metrics-bar">
+            <div class="metrics-left">
+                <div class="metric-item">
+                    <div class="metric-dot dot-ablvert"></div>
+                    <span class="metric-name">AB-L-VERT:</span>
+                    <span class="metric-value" id="metric1">2.46</span>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-dot dot-abllat"></div>
+                    <span class="metric-name">AB-L-LAT:</span>
+                    <span class="metric-value" id="metric2">0.64</span>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-dot dot-abrvert"></div>
+                    <span class="metric-name">AB-R-VERT:</span>
+                    <span class="metric-value" id="metric3">0.46</span>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-dot dot-abrlat"></div>
+                    <span class="metric-name">AB-R-LAT:</span>
+                    <span class="metric-value" id="metric4">0.10</span>
+                </div>
+            </div>
+            <div class="metrics-right">
+                <i class="fas fa-sync-alt fa-spin"></i>
+                <span>Real-time updates</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Update timestamp
+        function updateTimestamp() {
+            const now = new Date();
+            document.getElementById('currentTimestamp').textContent = 
+                now.toLocaleTimeString() + ' ' + now.toLocaleDateString();
+        }
+        setInterval(updateTimestamp, 1000);
+        updateTimestamp();
+
+        // Update last update counter
+        let seconds = 0;
+        setInterval(() => {
+            seconds = (seconds + 1) % 60;
+            document.getElementById('lastUpdate').textContent = seconds + 's ago';
+        }, 1000);
+
+        // Channel data
+        const channels = [
+            { name: 'AB-L-VERT', color: '#22c55e', base: 2.46, legendId: 'legend1', metricId: 'metric1' },
+            { name: 'AB-L-LAT', color: '#eab308', base: 0.64, legendId: 'legend2', metricId: 'metric2' },
+            { name: 'AB-R-VERT', color: '#ef4444', base: 0.46, legendId: 'legend3', metricId: 'metric3' },
+            { name: 'AB-R-LAT', color: '#8b5cf6', base: 0.10, legendId: 'legend4', metricId: 'metric4' }
+        ];
+
+        // Generate initial data
+        const dataPoints = 200;
+        const datasets = channels.map(ch => ({
+            label: ch.name,
+            data: Array(dataPoints).fill(0).map((_, i) => 
+                ch.base + Math.sin(i * 0.1) * ch.base * 0.3 + (Math.random() - 0.5) * 0.2
+            ),
+            borderColor: ch.color,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.4,
+            pointRadius: 0,
+            pointHoverRadius: 3
+        }));
+
+        // Main chart
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        const mainChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(dataPoints).fill(0).map((_, i) => i),
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'white',
+                        titleColor: '#1e293b',
+                        bodyColor: '#334155',
+                        borderColor: '#e2e8f0',
+                        borderWidth: 1
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        grid: { color: '#f1f5f9' },
+                        ticks: { color: '#64748b' }
+                    },
+                    x: {
+                        display: false,
+                        grid: { display: false }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+
+        // Update values periodically
+        setInterval(() => {
+            // Update each channel's data
+            channels.forEach((ch, idx) => {
+                // Generate new random value
+                const newVal = (ch.base + (Math.random() - 0.5) * 0.4).toFixed(2);
+                
+                // Update legend and metrics
+                document.getElementById(ch.legendId).textContent = newVal + ' m/s²';
+                document.getElementById(ch.metricId).textContent = newVal;
+                
+                // Update chart data
+                mainChart.data.datasets[idx].data.shift();
+                mainChart.data.datasets[idx].data.push(
+                    ch.base + Math.sin(Date.now() * 0.01 + idx) * ch.base * 0.3 + (Math.random() - 0.5) * 0.2
+                );
+            });
+            
+            mainChart.update();
+        }, 1000);
+
+        // Time range selector
+        function setTimeRange(range) {
+            document.querySelectorAll('.graph-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Simulate data refresh
+            const points = range === '1h' ? 200 : range === '6h' ? 500 : range === '24h' ? 1000 : 2000;
+            mainChart.data.labels = Array(points).fill(0).map((_, i) => i);
+            
+            channels.forEach((ch, idx) => {
+                mainChart.data.datasets[idx].data = Array(points).fill(0).map((_, i) => 
+                    ch.base + Math.sin(i * 0.1) * ch.base * 0.3 + (Math.random() - 0.5) * 0.2
+                );
+            });
+            
+            mainChart.update();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Accelerations Km - RailMonitor</title>
+<style>
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        background: #f0f2f5;
+        margin: 0;
+        color: #1e293b;
+    }
+
+    /* Toolbar */
+    .toolbar {
+        background: white;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 12px 20px;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+
+    .toolbar-label {
+        font-weight: 600;
+        color: #1e293b;
+        margin-right: 5px;
+    }
+
+    .toolbar-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        padding: 6px 12px;
+        border-radius: 6px;
+        transition: all 0.2s;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+    }
+
+    .toolbar-item:hover {
+        background: #e2e8f0;
+    }
+
+    .toolbar-item.active {
+        background: #22c55e;
+        color: white;
+        border-color: #22c55e;
+    }
+
+    .toolbar-item.active input[type="checkbox"] {
+        accent-color: white;
+    }
+
+    .toolbar-item input[type="checkbox"] {
+        margin: 0;
+        cursor: pointer;
+    }
+
+    /* Container */
+    .container {
+        padding: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    /* KM Block */
+    .km-block {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    }
+
+    /* KM Header */
+    .km-header {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        color: white;
+        padding: 16px 20px;
+        font-size: 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .km-header-left {
+        display: flex;
+        gap: 30px;
+        flex-wrap: wrap;
+    }
+
+    .km-header-right {
+        background: rgba(255,255,255,0.1);
+        padding: 4px 12px;
+        border-radius: 30px;
+        font-size: 12px;
+    }
+
+    /* Direction indicator */
+    .direction-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 30px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 10px;
+    }
+
+    .direction-down {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    /* Sections */
+    .section {
+        padding: 20px;
+        border-bottom: 1px solid #e2e8f0;
+        animation: fadeIn 0.3s ease;
+    }
+
+    .section:last-child {
+        border-bottom: none;
+    }
+
+    .section-title {
+        font-weight: 600;
+        margin-bottom: 16px;
+        font-size: 16px;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .section-title i {
+        color: #22c55e;
+    }
+
+    /* Tables */
+    .table-container {
+        overflow-x: auto;
+        margin-bottom: 15px;
+    }
+
+    table {
+        border-collapse: collapse;
+        font-size: 12px;
+        width: 100%;
+        min-width: 1200px;
+    }
+
+    th, td {
+        padding: 10px 8px;
+        border: 1px solid #e2e8f0;
+        text-align: center;
+    }
+
+    th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    tr:hover td {
+        background: #f8fafc;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 30px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .badge-p1 {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .badge-p2 {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .badge-p3 {
+        background: #f1f5f9;
+        color: #7f1d1d;
+        font-weight: 700;
+    }
+
+    .value-high {
+        color: #ef4444;
+        font-weight: 600;
+    }
+
+    .value-medium {
+        color: #f59e0b;
+        font-weight: 600;
+    }
+
+    .value-low {
+        color: #22c55e;
+    }
+
+    /* Meter marker */
+    .meter-marker {
+        font-family: monospace;
+        font-weight: 600;
+        color: #2563eb;
+        background: #dbeafe;
+        padding: 4px 8px;
+        border-radius: 4px;
+    }
+
+    /* Peak/Meter format - using / instead of @ */
+    .peak-meter {
+        font-family: monospace;
+        font-weight: 600;
+    }
+
+    .peak-meter span {
+        font-size: 10px;
+        color: #64748b;
+        margin-left: 2px;
+    }
+
+    /* Count indicator */
+    .count-badge {
+        display: inline-block;
+        min-width: 24px;
+        height: 24px;
+        line-height: 24px;
+        border-radius: 12px;
+        font-weight: 700;
+        font-size: 13px;
+    }
+
+    .count-p1 {
+        background: #fef3c7;
+        color: #92400e;
+    }
+
+    .count-p2 {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .count-p3 {
+        background: #f1f5f9;
+        color: #7f1d1d;
+        font-weight: 700;
+    }
+
+    /* Standard deviation columns */
+    .sd-column {
+        background: #f0f9ff;
+        font-weight: 500;
+    }
+
+    .sd-value {
+        font-family: monospace;
+        color: #0284c7;
+    }
+
+    /* No data message */
+    .no-data {
+        text-align: center;
+        padding: 40px;
+        color: #64748b;
+        font-style: italic;
+        background: #f8fafc;
+        border-radius: 8px;
+    }
+
+    /* Animations */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .toolbar {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .km-header {
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        
+        .km-header-left {
+            flex-direction: column;
+            gap: 10px;
+        }
+    }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <span class="toolbar-label">Recorded Accelerations Km (54)</span>
+    
+    <div class="toolbar-item active" id="blocksTab" onclick="toggleSection('blocks')">
+        <input type="checkbox" id="blocksCheck" checked onclick="event.stopPropagation()">
+        <label for="blocksCheck" onclick="event.stopPropagation()">Blocks</label>
+    </div>
+    
+    <div class="toolbar-item" id="peakDistTab" onclick="toggleSection('peakDist')">
+        <input type="checkbox" id="peakDistCheck" onclick="event.stopPropagation()">
+        <label for="peakDistCheck" onclick="event.stopPropagation()">Peak Distribution</label>
+    </div>
+    
+    <div class="toolbar-item" id="worstPeaksTab" onclick="toggleSection('worstPeaks')">
+        <input type="checkbox" id="worstPeaksCheck" onclick="event.stopPropagation()">
+        <label for="worstPeaksCheck" onclick="event.stopPropagation()">Worst Peaks</label>
+    </div>
+</div>
+
+<div class="container">
+    <div class="km-block">
+        <div class="km-header">
+            <div class="km-header-left">
+                <span><i class="fas fa-map-pin"></i> Km From: 1397</span>
+                <span><i class="fas fa-map-pin"></i> Km To: 1396</span>
+                <span><i class="fas fa-qrcode"></i> RT-CODE: 23105011</span>
+                <span class="direction-badge direction-down"><i class="fas fa-arrow-down"></i> DOWNLINE</span>
+            </div>
+            <div class="km-header-right">
+                <i class="fas fa-clock"></i> Updated: Just now
+            </div>
+        </div>
+
+        <!-- Blocks Section -->
+        <div class="section" id="blocksSection">
+            <div class="section-title">
+                <i class="fas fa-cubes"></i>
+                Blocks
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="3">LOC</th>
+                            <th colspan="4">LEFT</th>
+                            <th colspan="4">RIGHT</th>
+                        </tr>
+                        <tr>
+                            <th colspan="2">RMS</th>
+                            <th colspan="2">SD</th>
+                            <th colspan="2">RMS</th>
+                            <th colspan="2">SD</th>
+                        </tr>
+                        <tr>
+                            <th>V</th>
+                            <th>L</th>
+                            <th>V</th>
+                            <th>L</th>
+                            <th>V</th>
+                            <th>L</th>
+                            <th>V</th>
+                            <th>L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>BLK1</td>
+                            <td>0.37</td>
+                            <td>0.16</td>
+                            <td class="sd-value">0.08</td>
+                            <td class="sd-value">0.04</td>
+                            <td>0.33</td>
+                            <td>0.18</td>
+                            <td class="sd-value">0.07</td>
+                            <td class="sd-value">0.05</td>
+                        </tr>
+                        <tr>
+                            <td>BLK2</td>
+                            <td>0.41</td>
+                            <td>0.21</td>
+                            <td class="sd-value">0.09</td>
+                            <td class="sd-value">0.05</td>
+                            <td>0.34</td>
+                            <td>0.19</td>
+                            <td class="sd-value">0.08</td>
+                            <td class="sd-value">0.04</td>
+                        </tr>
+                        <tr>
+                            <td>BLK3</td>
+                            <td class="value-medium">0.45</td>
+                            <td>0.18</td>
+                            <td class="sd-value">0.11</td>
+                            <td class="sd-value">0.04</td>
+                            <td>0.35</td>
+                            <td>0.17</td>
+                            <td class="sd-value">0.09</td>
+                            <td class="sd-value">0.03</td>
+                        </tr>
+                        <tr>
+                            <td>BLK4</td>
+                            <td class="value-high">0.58</td>
+                            <td>0.20</td>
+                            <td class="sd-value">0.14</td>
+                            <td class="sd-value">0.05</td>
+                            <td class="value-high">0.46</td>
+                            <td>0.19</td>
+                            <td class="sd-value">0.11</td>
+                            <td class="sd-value">0.04</td>
+                        </tr>
+                        <tr>
+                            <td>BLK5</td>
+                            <td>0.42</td>
+                            <td>0.15</td>
+                            <td class="sd-value">0.10</td>
+                            <td class="sd-value">0.03</td>
+                            <td>0.38</td>
+                            <td>0.16</td>
+                            <td class="sd-value">0.09</td>
+                            <td class="sd-value">0.04</td>
+                        </tr>
+                        <tr>
+                            <td>BLK6</td>
+                            <td>0.39</td>
+                            <td class="value-medium">0.24</td>
+                            <td class="sd-value">0.09</td>
+                            <td class="sd-value">0.06</td>
+                            <td>0.37</td>
+                            <td class="value-medium">0.22</td>
+                            <td class="sd-value">0.09</td>
+                            <td class="sd-value">0.05</td>
+                        </tr>
+                        <tr>
+                            <td>BLK7</td>
+                            <td>0.36</td>
+                            <td>0.14</td>
+                            <td class="sd-value">0.08</td>
+                            <td class="sd-value">0.03</td>
+                            <td>0.32</td>
+                            <td>0.15</td>
+                            <td class="sd-value">0.07</td>
+                            <td class="sd-value">0.04</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Peak Distribution Section -->
+        <div class="section" id="peakDistSection" style="display: none;">
+            <div class="section-title">
+                <i class="fas fa-chart-pie"></i>
+                Peak Distribution
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="2">BANDS</th>
+                            <th colspan="2">LEFT</th>
+                            <th colspan="2">RIGHT</th>
+                        </tr>
+                        <tr>
+                            <th>V</th>
+                            <th>L</th>
+                            <th>V</th>
+                            <th>L</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="badge badge-p1">P1</span></td>
+                            <td><span class="count-badge count-p1">3</span></td>
+                            <td><span class="count-badge count-p1">2</span></td>
+                            <td><span class="count-badge count-p1">2</span></td>
+                            <td><span class="count-badge count-p1">1</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge badge-p2">P2</span></td>
+                            <td><span class="count-badge count-p2">4</span></td>
+                            <td><span class="count-badge count-p2">3</span></td>
+                            <td><span class="count-badge count-p2">3</span></td>
+                            <td><span class="count-badge count-p2">2</span></td>
+                        </tr>
+                        <tr>
+                            <td><span class="badge badge-p3">P3</span></td>
+                            <td><span class="count-badge count-p3">2</span></td>
+                            <td><span class="count-badge count-p3">1</span></td>
+                            <td><span class="count-badge count-p3">2</span></td>
+                            <td><span class="count-badge count-p3">0</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Worst Peaks Section - Using / instead of @, no units -->
+        <div class="section" id="worstPeaksSection" style="display: none;">
+            <div class="section-title">
+                <i class="fas fa-chart-line"></i>
+                Worst Peaks
+            </div>
+            
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Param</th>
+                            <th>1</th>
+                            <th>2</th>
+                            <th>3</th>
+                            <th>4</th>
+                            <th>5</th>
+                            <th>6</th>
+                            <th>7</th>
+                            <th>8</th>
+                            <th>9</th>
+                            <th>10</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>L-LAT</strong></td>
+                            <td class="peak-meter value-medium">7.2<span>/999m</span></td>
+                            <td class="peak-meter value-medium">8.1<span>/887m</span></td>
+                            <td class="peak-meter value-medium">6.8<span>/775m</span></td>
+                            <td class="peak-meter value-medium">9.3<span>/663m</span></td>
+                            <td class="peak-meter value-low">5.4<span>/551m</span></td>
+                            <td class="peak-meter value-medium">8.7<span>/439m</span></td>
+                            <td class="peak-meter value-medium">7.5<span>/327m</span></td>
+                            <td class="peak-meter value-medium">6.2<span>/215m</span></td>
+                            <td class="peak-meter value-medium">8.9<span>/103m</span></td>
+                            <td class="peak-meter value-low">4.8<span>/001m</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>L-VERT</strong></td>
+                            <td class="peak-meter value-high">18.2<span>/999m</span></td>
+                            <td class="peak-meter value-high">16.4<span>/887m</span></td>
+                            <td class="peak-meter value-medium">9.3<span>/775m</span></td>
+                            <td class="peak-meter value-high">17.5<span>/663m</span></td>
+                            <td class="peak-meter value-medium">7.2<span>/551m</span></td>
+                            <td class="peak-meter value-high">15.8<span>/439m</span></td>
+                            <td class="peak-meter value-medium">8.4<span>/327m</span></td>
+                            <td class="peak-meter value-high">19.1<span>/215m</span></td>
+                            <td class="peak-meter value-medium">6.7<span>/103m</span></td>
+                            <td class="peak-meter value-low">4.2<span>/001m</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>R-LAT</strong></td>
+                            <td class="peak-meter value-medium">6.3<span>/999m</span></td>
+                            <td class="peak-meter value-medium">7.8<span>/887m</span></td>
+                            <td class="peak-meter value-low">5.9<span>/775m</span></td>
+                            <td class="peak-meter value-medium">8.2<span>/663m</span></td>
+                            <td class="peak-meter value-low">4.7<span>/551m</span></td>
+                            <td class="peak-meter value-medium">7.1<span>/439m</span></td>
+                            <td class="peak-meter value-medium">6.5<span>/327m</span></td>
+                            <td class="peak-meter value-medium">8.4<span>/215m</span></td>
+                            <td class="peak-meter value-low">5.2<span>/103m</span></td>
+                            <td class="peak-meter value-low">3.9<span>/001m</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>R-VERT</strong></td>
+                            <td class="peak-meter value-high">16.8<span>/999m</span></td>
+                            <td class="peak-meter value-medium">9.1<span>/887m</span></td>
+                            <td class="peak-meter value-high">19.7<span>/775m</span></td>
+                            <td class="peak-meter value-medium">8.3<span>/663m</span></td>
+                            <td class="peak-meter value-high">15.2<span>/551m</span></td>
+                            <td class="peak-meter value-medium">7.6<span>/439m</span></td>
+                            <td class="peak-meter value-high">17.3<span>/327m</span></td>
+                            <td class="peak-meter value-medium">6.9<span>/215m</span></td>
+                            <td class="peak-meter value-high">18.5<span>/103m</span></td>
+                            <td class="peak-meter value-low">4.1<span>/001m</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // State management
+    let activeSections = {
+        blocks: true,
+        peakDist: false,
+        worstPeaks: false
+    };
+
+    // Load thresholds from localStorage (if available)
+    let thresholds = {
+        p1Min: 5,
+        p1Max: 10,
+        p2Min: 10,
+        p2Max: 20,
+        p3Min: 20
+    };
+
+    function loadThresholds() {
+        try {
+            const saved = localStorage.getItem('railmonitor_thresholds');
+            if (saved) {
+                thresholds = JSON.parse(saved);
+            }
+        } catch (e) {
+            console.error('Error loading thresholds:', e);
+        }
+    }
+
+    // Toggle sections based on checkbox clicks
+    function toggleSection(section) {
+        const checkboxes = {
+            blocks: document.getElementById('blocksCheck'),
+            peakDist: document.getElementById('peakDistCheck'),
+            worstPeaks: document.getElementById('worstPeaksCheck')
+        };
+
+        const tabs = {
+            blocks: document.getElementById('blocksTab'),
+            peakDist: document.getElementById('peakDistTab'),
+            worstPeaks: document.getElementById('worstPeaksTab')
+        };
+
+        const sections = {
+            blocks: document.getElementById('blocksSection'),
+            peakDist: document.getElementById('peakDistSection'),
+            worstPeaks: document.getElementById('worstPeaksSection')
+        };
+
+        checkboxes[section].checked = !checkboxes[section].checked;
+        activeSections[section] = checkboxes[section].checked;
+
+        if (activeSections[section]) {
+            tabs[section].classList.add('active');
+        } else {
+            tabs[section].classList.remove('active');
+        }
+
+        for (let key in sections) {
+            sections[key].style.display = activeSections[key] ? 'block' : 'none';
+        }
+    }
+
+    window.onload = function() {
+        loadThresholds();
+        
+        document.getElementById('blocksCheck').checked = true;
+        document.getElementById('peakDistCheck').checked = false;
+        document.getElementById('worstPeaksCheck').checked = false;
+
+        document.getElementById('blocksSection').style.display = 'block';
+        document.getElementById('peakDistSection').style.display = 'none';
+        document.getElementById('worstPeaksSection').style.display = 'none';
+
+        document.getElementById('blocksTab').classList.add('active');
+        document.getElementById('peakDistTab').classList.remove('active');
+        document.getElementById('worstPeaksTab').classList.remove('active');
+    };
+
+    window.toggleSection = toggleSection;
+</script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+</body>
+</html>
