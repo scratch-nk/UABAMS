@@ -115,20 +115,75 @@
             gap: 20px;
         }
 
-        .connection-status {
+        .accel-status-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* One card per accelerometer */
+        .accel-card {
             display: flex;
             align-items: center;
             gap: 6px;
-            background: rgba(34,197,94,0.15);
-            padding: 4px 12px;
-            border-radius: 20px;
-            color: #22c55e;
-            font-size: 13px;
-            font-weight: 600;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 4px 8px;
         }
 
-        .connection-status i {
-            font-size: 8px;
+        .accel-card-label {
+            color: #94a3b8;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-right: 2px;
+            white-space: nowrap;
+        }
+
+        /* Individual state pill */
+        .state-pill {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            transition: background 0.3s, color 0.3s, opacity 0.3s;
+            white-space: nowrap;
+        }
+
+        .state-pill i {
+            font-size: 7px;
+        }
+
+        /* Inactive (dimmed) base */
+        .state-pill.not-connected {
+            background: rgba(239,68,68,0.08);
+            color: rgba(239,68,68,0.35);
+        }
+        .state-pill.initialized {
+            background: rgba(245,158,11,0.08);
+            color: rgba(245,158,11,0.35);
+        }
+        .state-pill.connected {
+            background: rgba(34,197,94,0.08);
+            color: rgba(34,197,94,0.35);
+        }
+
+        /* Active state — bright */
+        .state-pill.not-connected.active {
+            background: rgba(239,68,68,0.18);
+            color: #ef4444;
+        }
+        .state-pill.initialized.active {
+            background: rgba(245,158,11,0.18);
+            color: #f59e0b;
+        }
+        .state-pill.connected.active {
+            background: rgba(34,197,94,0.18);
+            color: #22c55e;
         }
 
         .time-display {
@@ -428,9 +483,33 @@
         </nav>
 
         <div class="header-right">
-            <div class="connection-status">
-                <i class="fas fa-circle"></i>
-                <span>LIVE</span>
+            <div class="accel-status-group">
+                <!-- Accelerometer 1 -->
+                <div class="accel-card" id="accel1Card">
+                    <span class="accel-card-label">Accel 1</span>
+                    <div class="state-pill not-connected active" id="accel1-not-connected">
+                        <i class="fas fa-circle"></i> Not Connected
+                    </div>
+                    <div class="state-pill initialized" id="accel1-initialized">
+                        <i class="fas fa-circle"></i> Initialized
+                    </div>
+                    <div class="state-pill connected" id="accel1-connected">
+                        <i class="fas fa-circle"></i> Connected
+                    </div>
+                </div>
+                <!-- Accelerometer 2 -->
+                <div class="accel-card" id="accel2Card">
+                    <span class="accel-card-label">Accel 2</span>
+                    <div class="state-pill not-connected active" id="accel2-not-connected">
+                        <i class="fas fa-circle"></i> Not Connected
+                    </div>
+                    <div class="state-pill initialized" id="accel2-initialized">
+                        <i class="fas fa-circle"></i> Initialized
+                    </div>
+                    <div class="state-pill connected" id="accel2-connected">
+                        <i class="fas fa-circle"></i> Connected
+                    </div>
+                </div>
             </div>
             <div class="time-display" id="currentTime"></div>
             <div class="user-profile">
@@ -522,6 +601,29 @@
     </div>
 
     <script>
+        /**
+         * Update accelerometer connection status.
+         * Highlights the active state pill and dims the other two.
+         * @param {1|2} accelId - which accelerometer (1 or 2)
+         * @param {'not-connected'|'initialized'|'connected'} status
+         */
+        const ACCEL_STATES = ['not-connected', 'initialized', 'connected'];
+
+        function setAccelStatus(accelId, status) {
+            ACCEL_STATES.forEach(state => {
+                const pill = document.getElementById(`accel${accelId}-${state}`);
+                if (!pill) return;
+                if (state === status) {
+                    pill.classList.add('active');
+                } else {
+                    pill.classList.remove('active');
+                }
+            });
+        }
+
+        // Call setAccelStatus(1, 'connected') / setAccelStatus(2, 'initialized')
+        // from your WebSocket / MQTT event handlers to reflect live device state.
+
         // Update time
         function updateTime() {
             const now = new Date();
