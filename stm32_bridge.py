@@ -12,17 +12,11 @@ import time
 import re
 import signal
 import sys
-import argparse
 from datetime import datetime, timedelta
 
 # Configuration
-# MQTT_HOST = "192.168.0.125"
 MQTT_HOST = "localhost"
 MQTT_PORT = 1883
-MQTT_TOPIC_ACCL = "adj/datalogger/sensors/accelerometer"
-MQTT_TOPIC_GPS = "adj/datalogger/sensors/gps"
-MQTT_TOPIC_ALL = "adj/datalogger/sensors"   # NOTE: Code below *only* sends all data, 
-                                            # both GPS and accelerometer data is sent by boards together is parsed
 MQTT_TOPIC = "sensor/railway/accelerometer/stm32"
 BAUD_RATE = 115200
 SERIAL_PORT = None  # Will auto-detect
@@ -65,35 +59,23 @@ def find_stm32_port():
             return None
         return None
 
-def parse_accelerometer_data(line, option):
+def parse_accelerometer_data(line):
     """
     Parse the USART output line: "X=1  Y=-13  Z=-262"
     Returns tuple (x_g, y_g, z_g, x_raw, y_raw, z_raw)
     """
-
     # Pattern to match X=1 Y=-13 Z=-262 (handles negative numbers)
-    # pattern = r'X=(-?\d+)\s+Y=(-?\d+)\s+Z=(-?\d+)'
-    # Pattern to match float values (with decimal place)
-    pattern = r'X=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Y=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+Z=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)'
-    #pattern = r'''
-    #    X=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
-    #    Y=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
-    #    Z=(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s+
-    #    GPS_DATE="([^"]+)"\s+
-    #    GPS_TIME="([^"]+)"\s+
-    #    GPS_CORDS="([^,]+),\s*([^,]+),\s*([^"]+)"
-    #    '''
+    pattern = r'X=(-?\d+)\s+Y=(-?\d+)\s+Z=(-?\d+)'
     match = re.search(pattern, line)
     
     if match:
-        # print (f"unparsed line: {line}")
         # ADXL345 with ±2g range: 1g = 256 LSB
         # At rest, Z should read about +256 (1g) or -256 depending on orientation
         SCALE_FACTOR = 256.0
         
-        x_raw = float (match.group(1))
-        y_raw = float (match.group(2))
-        z_raw = float (match.group(3))
+        x_raw = int(match.group(1))
+        y_raw = int(match.group(2))
+        z_raw = int(match.group(3))
         
         # Convert to g
         x_g = x_raw / SCALE_FACTOR
@@ -104,8 +86,7 @@ def parse_accelerometer_data(line, option):
         
         return x_g, y_g, z_g, x_raw, y_raw, z_raw
     
-    if option == 'd':
-        print(f"{line}")
+    print(f"Could not parse line: {line}")
     return None
 
 def calculate_peak_g(x_g, y_g, z_g):
@@ -124,27 +105,17 @@ def determine_severity(peak_g):
 
 def main():
     global running
-
-    parser = argparse.ArgumentParser(description="STM32 ADXL345 Bridge")
-    parser.add_argument("-t", "--tty", help="Serial port (e.g., /dev/ttyUSB0)")
-    parser.add_argument("-d", "--debug", action="store_true", help="Debug: print unparsed lines")
-    args = parser.parse_args()
-    option = 'd' if args.debug else None
-
+    
     print("STM32 ADXL345 Bridge Starting...")
     print("====================================")
-
-    if args.tty:
-        port = args.tty
-        print(f"\nUsing specified port: {port}")
-    else:
-        # Find STM32 serial port
-        print("\n🔍 Detecting STM32 serial port...")
-        port = find_stm32_port()
-
-        if not port:
-            print(" Could not find STM32 port. Please specify manually:")
-            port = input("Enter serial port (e.g., /dev/ttyUSB0): ").strip()
+    
+    # Find STM32 serial port
+    print("\n🔍 Detecting STM32 serial port...")
+    port = find_stm32_port()
+    
+    if not port:
+        print(" Could not find STM32 port. Please specify manually:")
+        port = input("Enter serial port (e.g., /dev/ttyUSB0): ").strip()
     
     # Connect to serial
     try:
@@ -186,7 +157,7 @@ def main():
             
             if line:
                 # Parse accelerometer values
-                result = parse_accelerometer_data(line, option)
+                result = parse_accelerometer_data(line)
                 
                 if result:
                     x_g, y_g, z_g, x_raw, y_raw, z_raw = result
