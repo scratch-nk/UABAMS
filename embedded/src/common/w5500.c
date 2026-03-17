@@ -216,7 +216,7 @@ int W5500_Send(uint8_t sock, uint8_t *buf, uint16_t len)
         W5500_Write(offset, tx_block, buf[i]);
     }
 
-    /* 3. Update TX write pointer */
+    // 3. Update TX write pointer 
     tx_wr += len;
     W5500_Write(0x0024, sock_block, (tx_wr >> 8) & 0xFF);
     W5500_Write(0x0025, sock_block,  tx_wr & 0xFF);

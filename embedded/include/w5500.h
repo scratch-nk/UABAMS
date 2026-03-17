@@ -25,7 +25,7 @@ uint8_t W5500_GetSocketStatus(uint8_t sock);
 int W5500_Send(uint8_t sock, uint8_t *buf, uint16_t len);
 int W5500_Recv(uint8_t sock, uint8_t *buf, uint16_t maxlen);
 
-/* ---------- CHIP CONTROL ---------- */
+/* ------- CHIP CONTROL ---------- */
 /* These macros must already exist somewhere */
 #define W5500_CS_LOW()   (GPIOB->BSRR = (1 << (12 + 16)))
 #define W5500_CS_HIGH()  (GPIOB->BSRR = (1 << 12))
