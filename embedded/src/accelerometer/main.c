@@ -460,6 +460,32 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     for (;;);
 }
 
+static void vBootTask(void *pvParam)
+{
+    (void)pvParam;
+ for (;;)
+    {
+    // 30 sec delay
+    vTaskDelay(pdMS_TO_TICKS(30000));
+
+    print_boot_info("DATA LOGGER UNIT");
+    usart_debug("SYSTEM Health INITIALIZATION...\r\n");
+
+    // sensor_spi_health_check();
+    // sensor_max_range_check(1);
+    // sensor_max_range_check(2);
+    // sensor_static_check();
+
+    // spi2_w5500_check();
+    // ethernet_hardware_check();
+
+    // usart_debug("\r\nDATA LOGGER BOOT\r\n");
+
+    health_print_all();
+
+    //vTaskDelete(NULL); // ek baar run karke delete
+    }
+}
 /* -- main ------------------------------------------------------------------ */
 int main(void)
 {
@@ -473,7 +499,8 @@ int main(void)
     spi1_init();    /* ADXL345 x2 on SPI1 */
     
     /* Sensor health checks from accelerometer_health.h */
-    sensor_spi_health_check();
+
+    //sensor_spi_health_check();
     sensor_max_range_check(1);
     sensor_max_range_check(2);
     sensor_static_check();
@@ -533,7 +560,7 @@ int main(void)
     usart_debug("CONNECT REQUEST SENT\r\n");
     W5500_TCP_Client_Connect(0, server_ip, 5000);
 
-    health_print_all();   /* TCP shows PENDING; LogTask will update and reprint */
+   // health_print_all();   /* TCP shows PENDING; LogTask will update and reprint */
     usart_debug("[INIT] Ready. Starting scheduler...\r\n");
 
     /* ── RTOS objects ──────────────────────────────────────────────────────── */
@@ -548,6 +575,7 @@ int main(void)
     /* LogTask: priority 3 -- runs when AccelTask is delaying between samples.
      * Stack 640 words = 2560 B -- covers snprintf(512 B) + W5500 init frames. */
     xTaskCreate(vLogTask,    "Log",     640, NULL, 3, NULL);
+    xTaskCreate(vBootTask, "Boot", 512, NULL, 2, NULL);
 
     /* HealthTask: priority 1 (lowest) -- runs every 5 s during idle periods.
      * Stack 256 words = 1024 B -- only calls driver reads + usart_debug.    */

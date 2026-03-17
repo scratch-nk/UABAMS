@@ -1,7 +1,6 @@
 #include "stm32f4xx.h"
 #include "spi_eth.h"
 #include "w5500.h"
-#include "gps.h"
 #include "usart_debug.h"
 #include "delay.h"
 #include "boot_info.h"
@@ -16,7 +15,6 @@
 #include "semphr.h"
 
 extern volatile uint32_t ms_ticks;
-
 // FreeRTOS scheduler start flag for SysTick handler 
 static volatile uint8_t xSchedulerStarted = 0;
 
@@ -25,9 +23,6 @@ uint8_t mac[] = {0x00, 0x08, 0xDC, 0x11, 0x22, 0x01};
 uint8_t ip[]  = {192, 168, 1, 100};
 uint8_t sn[]  = {255, 255, 255, 0};
 uint8_t gw[]  = {192, 168, 1, 1};
-
-// Mutex for GPS USART6
-static SemaphoreHandle_t xUSART6Mutex;
 
 // SysTick -- combined handler 
 extern void xPortSysTickHandler(void);
@@ -89,23 +84,23 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 }
 
 /* ============================================================================
- * Task 1: TCPSimpleTask - W5500 TCP Server
+ *  Task 2: TCPSimpleTask 
  * ========================================================================== */
-void vTCPSimpleTask(void *pvParam)
+void vTCPTask(void *pvParam)
 {
     (void)pvParam;
-    uint8_t rx_buf[256];
+    uint8_t rx_buf[512];
     uint8_t connected = 0;
     
     usart_debug("[TCPSimpleTask] started\r\n");
     
-    // W5500 Reset
+    // W5500 
     W5500_RST_LOW();
     vTaskDelay(pdMS_TO_TICKS(100));
     W5500_RST_HIGH();
     vTaskDelay(pdMS_TO_TICKS(300));
     
-    // W5500 version check
+   // W5500 version cheek
     uint8_t ver = W5500_ReadVersion();
     usart_debug("W5500 Version: 0x%02x ", ver);
     
@@ -115,10 +110,10 @@ void vTCPSimpleTask(void *pvParam)
         usart_debug("- ERROR: Wrong version!\r\n");
     }
     
-    // Network config
+   
     W5500_SetNetwork(mac, ip, sn, gw);
     
-    // TCP server start
+   //  TCP server start
     W5500_TCP_Server_Init(0, 5000);
     usart_debug("TCP SERVER LISTENING on port 5000...\r\n");
     usart_debug("IP: %d.%d.%d.%d\r\n", ip[0], ip[1], ip[2], ip[3]);
@@ -126,154 +121,132 @@ void vTCPSimpleTask(void *pvParam)
     for (;;) {
         uint8_t status = W5500_GetSocketStatus(0);
         
-        switch (status) {
-            case 0x17:  /* SOCK_ESTABLISHED */
-                if (!connected) {
-                    usart_debug("\r\n*** CLIENT CONNECTED! ***\r\n");
-                    connected = 1;
-                }
-                
-                int len = W5500_Recv(0, rx_buf, sizeof(rx_buf) - 1);
-                
-                if (len > 0) {
-                    rx_buf[len] = '\0';
-                    usart_debug("\r\n[RECEIVED %d bytes]\r\n", len);
-                    usart_debug("Data: %s\r\n", rx_buf);
-                    
-                    char *reply = "ACK from Junction Box\r\n";
-                    W5500_Send(0, (uint8_t*)reply, strlen(reply));
-                }
-                break;
-                
-            case 0x1C:  /* SOCK_CLOSE_WAIT */
-                usart_debug("\r\n*** CLIENT DISCONNECTED ***\r\n");
-                W5500_CloseSocket(0);
-                connected = 0;
-                break;
-                
-            case 0x00:  /* SOCK_CLOSED */
-                if (connected) {
-                    usart_debug("\r\n*** CONNECTION LOST ***\r\n");
-                    connected = 0;
-                }
-                // Server restart
-                W5500_TCP_Server_Init(0, 5000);
-                break;
-                
-            default:
-                if (connected) {
-                    connected = 0;
-                }
-                break;
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
-
-/* ============================================================================
- * Task 2: GPSPollTask - Poll GPS data
- * ========================================================================== */
-void vGPSPollTask(void *pvParam)
+        switch (status)
 {
-    (void)pvParam;
-    usart_debug("[GPSPollTask] started\r\n");
-    
-    uint32_t last_gps_print = 0;
-    uint8_t gps_fix = 0;
-
-    for (;;) {
-        xSemaphoreTake(xUSART6Mutex, portMAX_DELAY);
-        gps_poll();
-        xSemaphoreGive(xUSART6Mutex);
-        
-        // Print GPS status every 10 seconds
-        if (ms_ticks - last_gps_print >= 10000) {
-            last_gps_print = ms_ticks;
-            
-            xSemaphoreTake(xUSART6Mutex, portMAX_DELAY);
-            if (gps_data.valid) {
-                if (!gps_fix) {
-                    usart_debug("\r\n*** GPS FIX ACQUIRED ***\r\n");
-                    gps_fix = 1;
-                }
-                
-                double lat = gps_data.lat_i / 1000000.0;
-                double lon = gps_data.lon_i / 1000000.0;
-                double spd = gps_data.speed_cms * 0.036;
-                
-                usart_debug("[GPS] %02d:%02d:%02d | LAT: %.6f %c | LON: %.6f %c | SPD: %.2f km/h\r\n",
-                    gps_data.hour, gps_data.minute, gps_data.second,
-                    lat, gps_data.ns, lon, gps_data.ew, spd);
-            } else {
-                if (gps_fix) {
-                    usart_debug("\r\n*** GPS FIX LOST ***\r\n");
-                    gps_fix = 0;
-                } else {
-                    usart_debug("[GPS] Waiting for fix...\r\n");
-                }
-            }
-            xSemaphoreGive(xUSART6Mutex);
+    case 0x17:  // ESTABLISHED
+    {
+        if (!connected)
+        {
+            usart_debug("\r\n*** CLIENT CONNECTED ***\r\n");
+            connected = 1;
         }
+
+        //int len = W5500_Recv(0, rx_buf, sizeof(rx_buf) - 1);
+
+    static char big_buffer[2048];
+    static int index = 0;
+
+    int len = W5500_Recv(0, rx_buf, sizeof(rx_buf));
+
+if (len > 0)
+{
+    if (index + len < sizeof(big_buffer))
+    {
+        memcpy(&big_buffer[index], rx_buf, len);
+        index += len;
+        big_buffer[index] = '\0';
+
+        //  find first packet start
+        char *start = strstr(big_buffer, "[AXLE BOX LEFT");
+
+        if (start)
+        {
+            //  find next packet start
+            char *next = strstr(start + 10, "[AXLE BOX LEFT");
+
+            if (next)
+            {
+                int packet_len = next - start;
+
+                if (packet_len < 1024)
+                {
+                    char temp[1024];
+
+                    memcpy(temp, start, packet_len);
+                    temp[packet_len] = '\0';
+
+                    usart_debug("\r\n===== COMPLETE PACKET =====\r\n");
+                    usart_debug(temp);
+                }
+
+                //  shift remaining data
+                int remaining = index - (next - big_buffer);
+
+                memmove(big_buffer, next, remaining);
+                index = remaining;
+                big_buffer[index] = '\0';
+            }
+        }
+    }
+    else
+    {
+        index = 0;
+    }
+}
+        break;
+    }
+
+    case 0x1C:  // CLOSE_WAIT
+    {
+        usart_debug("\r\nCLIENT DISCONNECTED\r\n");
+        W5500_CloseSocket(0);
+        connected = 0;
+        break;
+    }
+
+    case 0x00:  // CLOSED
+    {
+        if (!connected)
+        {
+            W5500_TCP_Server_Init(0, 5000);
+        }
+        break;
+    }
+
+    default:
+        break;   // 
+}
         
-        vTaskDelay(pdMS_TO_TICKS(100));  // Poll GPS at 10Hz
+        /* 10 ms delay */
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
-/* ============================================================================
- * Main function
- * ========================================================================== */
 int main(void)
 {
     /* Initialize hardware */
     USART2_Init();
-    print_boot_info("JUNCTION BOX - WITH GPS");
+    print_boot_info("JUNCTION BOX - SIMPLE TEST");
     
     /* SPI2 initialize (for W5500) */
     SPI2_Init();
     
-    /* GPS initialize */
-    gps_usart6_init();
-    vTaskDelay(pdMS_TO_TICKS(500));  // Give GPS time to initialize
-    gps_rtc_init();
-    
     /* 1 ms SysTick */
     SysTick_Config(SystemCoreClock / 1000);
     
+    
     usart_debug("\r\n========================================\r\n");
-    usart_debug("JUNCTION BOX WITH GPS\r\n");
-    usart_debug("FreeRTOS Tasks: TCP Server + GPS\r\n");
+    usart_debug("JUNCTION BOX SIMPLE TEST MODE\r\n");
+    usart_debug("FreeRTOS Simple Tasks\r\n");
     usart_debug("========================================\r\n");
+    
     
     usart_debug("Hardware initialized\r\n");
     
-    /* Create mutex for GPS */
-    xUSART6Mutex = xSemaphoreCreateMutex();
-    if (xUSART6Mutex == NULL) {
-        usart_debug("FATAL: Failed to create GPS mutex\r\n");
-        for (;;);
-    }
     
-    /* Small delay for stability */
     for (int i = 0; i < 10; i++) {
         delay();
     }
+  
     
-    /* ===== TASKS CREATION ===== */
-    
-    /* Task 1: TCPSimpleTask - Priority 2 */
-    if (xTaskCreate(vTCPSimpleTask, "TCP", 512, NULL, 2, NULL) != pdPASS) {
+    /* Task 2: TCPTask -*/
+    if (xTaskCreate(vTCPTask, "TCP", 3072, NULL, 2, NULL) != pdPASS) {
         usart_debug("Failed to create TCPSimpleTask\r\n");
     } else {
         usart_debug("TCPSimpleTask created\r\n");
     }
     
-    /* Task 2: GPSPollTask - Priority 1 (lower than TCP) */
-    if (xTaskCreate(vGPSPollTask, "GPS", 256, NULL, 1, NULL) != pdPASS) {
-        usart_debug("Failed to create GPSPollTask\r\n");
-    } else {
-        usart_debug("GPSPollTask created\r\n");
-    }
+
     
     usart_debug("\r\nAll tasks created. Starting scheduler...\r\n");
     usart_debug("========================================\r\n\r\n");
