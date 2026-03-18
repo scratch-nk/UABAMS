@@ -459,31 +459,55 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     usart_debug("\r\n");
     for (;;);
 }
-
 static void vBootTask(void *pvParam)
 {
     (void)pvParam;
- for (;;)
+
+    char health_buf[512];
+
+    for (;;)
     {
-    // 30 sec delay
-    vTaskDelay(pdMS_TO_TICKS(30000));
+        vTaskDelay(pdMS_TO_TICKS(30000));
 
-    print_boot_info("DATA LOGGER UNIT");
-    usart_debug("SYSTEM Health INITIALIZATION...\r\n");
+        // Header
+        snprintf(health_buf, sizeof(health_buf),
+            "\r\n=================================\r\n"
+            "   UBMS 1.1\r\n"
+            "DATA LOGGER UNIT\r\n"
+            "=================================\r\n"
+            "SYSTEM Health INITIALIZATION...\r\n");
 
-    // sensor_spi_health_check();
-    // sensor_max_range_check(1);
-    // sensor_max_range_check(2);
-    // sensor_static_check();
+        usart_debug(health_buf);
 
-    // spi2_w5500_check();
-    // ethernet_hardware_check();
+        if (g_eth_ok)
+            UBMS_Send_TCP(health_buf);
 
-    // usart_debug("\r\nDATA LOGGER BOOT\r\n");
+        // UART original (same)
+        health_print_all();
 
-    health_print_all();
+       
+        snprintf(health_buf, sizeof(health_buf),
+            "[HEALTH] Peripheral Status\r\n"
+            "  USART2    : OK\r\n"
+            "  SPI1      : OK\r\n"
+            "  ADXL345 S1: %s\r\n"
+            "  ADXL345 S2: %s\r\n"
+            "  W5500     : %s\r\n"
+            "  PHY Link  : %s\r\n"
+            "  TCP       : %s\r\n"
+            "========================================\r\n",
 
-    //vTaskDelete(NULL); // ek baar run karke delete
+            (health_get_sensor(1) == HEALTH_OK) ? "OK" : "FAIL",
+            (health_get_sensor(2) == HEALTH_OK) ? "OK" : "FAIL",
+            (health_get_w5500() == HEALTH_OK) ? "OK" : "FAIL",
+            (health_get_phy() == HEALTH_OK) ? "OK" : "FAIL",
+            (g_eth_ok) ? "OK" : "FAIL"
+        );
+
+        if (g_eth_ok)
+        {
+            UBMS_Send_TCP(health_buf);
+        }
     }
 }
 /* -- main ------------------------------------------------------------------ */

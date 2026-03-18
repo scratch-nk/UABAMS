@@ -15,6 +15,7 @@
 #include "semphr.h"
 
 extern volatile uint32_t ms_ticks;
+
 // FreeRTOS scheduler start flag for SysTick handler 
 static volatile uint8_t xSchedulerStarted = 0;
 
@@ -83,10 +84,12 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     for (;;);
 }
 
+
+
 /* ============================================================================
- *  Task 2: TCPSimpleTask 
+ * Simple Task 2: TCPSimpleTask 
  * ========================================================================== */
-void vTCPTask(void *pvParam)
+void vTCPSimpleTask(void *pvParam)
 {
     (void)pvParam;
     uint8_t rx_buf[512];
@@ -121,96 +124,62 @@ void vTCPTask(void *pvParam)
     for (;;) {
         uint8_t status = W5500_GetSocketStatus(0);
         
-        switch (status)
-{
-    case 0x17:  // ESTABLISHED
-    {
-        if (!connected)
-        {
-            usart_debug("\r\n*** CLIENT CONNECTED ***\r\n");
-            connected = 1;
-        }
-
-        //int len = W5500_Recv(0, rx_buf, sizeof(rx_buf) - 1);
-
-    static char big_buffer[2048];
-    static int index = 0;
-
-    int len = W5500_Recv(0, rx_buf, sizeof(rx_buf));
-
-if (len > 0)
-{
-    if (index + len < sizeof(big_buffer))
-    {
-        memcpy(&big_buffer[index], rx_buf, len);
-        index += len;
-        big_buffer[index] = '\0';
-
-        //  find first packet start
-        char *start = strstr(big_buffer, "[AXLE BOX LEFT");
-
-        if (start)
-        {
-            //  find next packet start
-            char *next = strstr(start + 10, "[AXLE BOX LEFT");
-
-            if (next)
-            {
-                int packet_len = next - start;
-
-                if (packet_len < 1024)
-                {
-                    char temp[1024];
-
-                    memcpy(temp, start, packet_len);
-                    temp[packet_len] = '\0';
-
-                    usart_debug("\r\n===== COMPLETE PACKET =====\r\n");
-                    usart_debug(temp);
+        switch (status) {
+            case 0x17:  /* SOCK_ESTABLISHED */
+                if (!connected) {
+                    usart_debug("\r\n*** CLIENT CONNECTED! ***\r\n");
+                    connected = 1;
                 }
+                
+                int len;
+                while(
+                 len = W5500_Recv(0, rx_buf, sizeof(rx_buf) > 0))
+                 {
+                    rx_buf[len] = '\0';
+                    usart_debug((char*)rx_buf);
+                 }
+                if (len > 0) {
+                    rx_buf[len] = '\0';
+                    usart_debug("\r\n[RECEIVED %d bytes]\r\n", len);
+                    usart_debug("Data: %s\r\n", rx_buf);
+                    
+                    
+                    // char *reply = "ACK from Junction Box\r\n";
+                    // W5500_Send(0, (uint8_t*)reply, strlen(reply));
 
-                //  shift remaining data
-                int remaining = index - (next - big_buffer);
-
-                memmove(big_buffer, next, remaining);
-                index = remaining;
-                big_buffer[index] = '\0';
-            }
+                }
+                break;
+                
+            case 0x1C:  /* SOCK_CLOSE_WAIT */
+                usart_debug("\r\n*** CLIENT DISCONNECTED ***\r\n");
+                W5500_CloseSocket(0);
+                connected = 0;
+                break;
+                
+            case 0x00:  /* SOCK_CLOSED */
+                if (connected) {
+                    usart_debug("\r\n*** CONNECTION LOST ***\r\n");
+                    connected = 0;
+                }
+                
+                // server Again start
+                W5500_TCP_Server_Init(0, 5000);
+                break;
+                
+            default:
+                // no connection
+                if (connected) {
+                    connected = 0;
+                }
+                break;
         }
-    }
-    else
-    {
-        index = 0;
-    }
-}
-        break;
-    }
-
-    case 0x1C:  // CLOSE_WAIT
-    {
-        usart_debug("\r\nCLIENT DISCONNECTED\r\n");
-        W5500_CloseSocket(0);
-        connected = 0;
-        break;
-    }
-
-    case 0x00:  // CLOSED
-    {
-        if (!connected)
-        {
-            W5500_TCP_Server_Init(0, 5000);
-        }
-        break;
-    }
-
-    default:
-        break;   // 
-}
         
         /* 10 ms delay */
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
+
+
 
 int main(void)
 {
@@ -237,10 +206,11 @@ int main(void)
     for (int i = 0; i < 10; i++) {
         delay();
     }
-  
     
-    /* Task 2: TCPTask -*/
-    if (xTaskCreate(vTCPTask, "TCP", 3072, NULL, 2, NULL) != pdPASS) {
+    /* ===== TASKS CREATION ===== */
+    
+    /* Task 2: TCPSimpleTask -*/
+    if (xTaskCreate(vTCPSimpleTask, "TCP", 512, NULL, 2, NULL) != pdPASS) {
         usart_debug("Failed to create TCPSimpleTask\r\n");
     } else {
         usart_debug("TCPSimpleTask created\r\n");

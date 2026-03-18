@@ -2,10 +2,10 @@ PROJECT_ROOT := ../..
 FREERTOS_ROOT := $(PROJECT_ROOT)/src/freertos
 FREERTOS_OBJDIR := freertos_obj
 
-# ── Clock ─────────────────────────────────────────────────────────────────────
+# Clock 
 CPU_CLOCK_MHZ ?= 96
 
-# ── Compiler Flags ────────────────────────────────────────────────────────────
+#  Compiler Flags
 CC = arm-none-eabi-gcc
 OBJCOPY = arm-none-eabi-objcopy
 CFLAGS = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -O0 -g -Wall
@@ -76,7 +76,7 @@ $(DELAY_OBJ): $(PROJECT_ROOT)/src/common/delay.c | $(OBJDIR)
 $(OBJDIR)/w5500.o: $(PROJECT_ROOT)/src/common/w5500.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-# ── FreeRTOS kernel rules ─────────────────────────────────────────────────────
+# ── FreeRTOS kernel rules
 $(FREERTOS_OBJDIR)/tasks.o: $(FREERTOS_ROOT)/tasks.c | $(FREERTOS_OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
 
