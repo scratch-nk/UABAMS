@@ -1,5 +1,5 @@
 /*
- * accelerometer/main.c -- UABAMS Box 1, FreeRTOS v10.6.2
+  * accelerometer/main.c -- UABAMS Box 1, FreeRTOS v10.6.2 
  *
  * Three-task architecture:
  *
