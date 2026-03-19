@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Railway Monitoring System - Management Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/pages/management-dashboard.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="header-left">
+                <div class="logo">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <rect x="3" y="3" width="7" height="7" stroke="white"/>
+                        <rect x="14" y="3" width="7" height="7" stroke="white"/>
+                        <rect x="14" y="14" width="7" height="7" stroke="white"/>
+                        <rect x="3" y="14" width="7" height="7" stroke="white"/>
+                    </svg>
+                </div>
+                <div class="header-title">
+                    <h1>Railway Monitoring System</h1>
+                    <p>Executive Management Dashboard</p>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="time-display">
+                    <div class="time" id="currentTime">00:00:00</div>
+                    <div class="date" id="currentDate">Loading...</div>
+                </div>
+                <div class="status-badge">
+                    <div class="status-dot"></div>
+                    <span class="status-text">System Online</span>
+                </div>
+                <button class="icon-btn">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                </button>
+                <button class="icon-btn">
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12 1v6m0 6v6m5.2-13.2-4.2 4.2m-2 2-4.2 4.2M23 12h-6m-6 0H1m18.2 5.2-4.2-4.2m-2-2-4.2-4.2"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <div class="kpi-icon blue">
+                        <svg fill="none" stroke="#2563eb" stroke-width="2" viewBox="0 0 24 24">
+                            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="kpi-value">98.7%</div>
+                <div class="kpi-label">System Uptime</div>
+                <div class="kpi-change">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                        <polyline points="17 6 23 6 23 12"/>
+                    </svg>
+                    <span>+2.3% from last month</span>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <div class="kpi-icon purple">
+                        <svg fill="none" stroke="#9333ea" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M12 20V10"/>
+                            <path d="M18 20V4"/>
+                            <path d="M6 20v-4"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="kpi-value">156</div>
+                <div class="kpi-label">Active Sensors</div>
+                <div class="kpi-change">
+                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                        <polyline points="17 6 23 6 23 12"/>
+                    </svg>
+                    <span>+4 new sensors</span>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <div class="kpi-icon orange">
+                        <svg fill="none" stroke="#ea580c" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="kpi-value">3</div>
+                <div class="kpi-label">Active Alerts</div>
+                <div class="kpi-change orange">
+                    <span>2 require attention</span>
+                </div>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <div class="kpi-icon green">
+                        <svg fill="none" stroke="#059669" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="kpi-value">47</div>
+                <div class="kpi-label">Total Operators</div>
+                <div class="kpi-change">
+                    <span>24 currently active</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="dashboard-grid">
+            <!-- Sensor Performance Chart -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <h3>24-Hour Sensor Performance</h3>
+                        <p>Average readings across all sensors</p>
+                    </div>
+                    <button class="view-details">
+                        View Details
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <polyline points="9 18 15 12 9 6"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="chart-container">
+                    <canvas id="sensorChart"></canvas>
+                </div>
+            </div>
+
+            <!-- System Health -->
+            <div class="card">
+                <div class="card-title">
+                    <h3>System Health</h3>
+                </div>
+                <div class="health-chart">
+                    <canvas id="healthChart"></canvas>
+                </div>
+                <div class="health-legend">
+                    <div class="health-item">
+                        <div class="health-item-left">
+                            <div class="health-dot" style="background-color: #22c55e;"></div>
+                            <span class="health-name">Operational</span>
+                        </div>
+                        <span class="health-value">142</span>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-left">
+                            <div class="health-dot" style="background-color: #eab308;"></div>
+                            <span class="health-name">Warning</span>
+                        </div>
+                        <span class="health-value">12</span>
+                    </div>
+                    <div class="health-item">
+                        <div class="health-item-left">
+                            <div class="health-dot" style="background-color: #ef4444;"></div>
+                            <span class="health-name">Critical</span>
+                        </div>
+                        <span class="health-value">2</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GPS and Activity -->
+        <div class="bottom-grid">
+            <!-- GPS Information -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">
+                        <h3>Current Location Data</h3>
+                    </div>
+                </div>
+                <div class="gps-grid">
+                    <div class="gps-item">
+                        <div class="gps-label">Latitude</div>
+                        <div class="gps-value">28.613567° N</div>
+                    </div>
+                    <div class="gps-item">
+                        <div class="gps-label">Longitude</div>
+                        <div class="gps-value">77.209967° E</div>
+                    </div>
+                    <div class="gps-item">
+                        <div class="gps-label">Speed</div>
+                        <div class="gps-value">95.1 km/h</div>
+                    </div>
+                    <div class="gps-item">
+                        <div class="gps-label">Altitude</div>
+                        <div class="gps-value">216 m</div>
+                    </div>
+                    <div class="gps-item">
+                        <div class="gps-label">Satellites</div>
+                        <div class="gps-value">12 Connected</div>
+                    </div>
+                    <div class="gps-item active">
+                        <div class="gps-label">GPS Status</div>
+                        <div class="gps-value">Active</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="card">
+                <div class="card-title">
+                    <h3>Recent System Events</h3>
+                </div>
+                <div class="activity-feed">
+                    <div class="activity-item">
+                        <div class="activity-dot" style="background-color: #22c55e;"></div>
+                        <div class="activity-content">
+                            <div class="activity-title">System Health Check Passed</div>
+                            <div class="activity-desc">All sensors operating normally</div>
+                            <div class="activity-time">2 minutes ago</div>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-dot" style="background-color: #3b82f6;"></div>
+                        <div class="activity-content">
+                            <div class="activity-title">New Operator Login</div>
+                            <div class="activity-desc">Operator ID: OP-2847</div>
+                            <div class="activity-time">15 minutes ago</div>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-dot" style="background-color: #eab308;"></div>
+                        <div class="activity-content">
+                            <div class="activity-title">Sensor Calibration Due</div>
+                            <div class="activity-desc">3 sensors require calibration</div>
+                            <div class="activity-time">1 hour ago</div>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <div class="activity-dot" style="background-color: #22c55e;"></div>
+                        <div class="activity-content">
+                            <div class="activity-title">Data Backup Completed</div>
+                            <div class="activity-desc">All systems backed up successfully</div>
+                            <div class="activity-time">2 hours ago</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="../js/common.js"></script>
+    <script src="../js/pages/management-dashboard.js"></script>
+</body>
+</html>
