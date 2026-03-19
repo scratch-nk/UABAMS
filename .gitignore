@@ -21,3 +21,9 @@ desktop.ini
 *.key
 secrets.*
 config.local.*
+
+node_modules/
+package.json
+package-lock.json
+updated_version.sh
+.gitignore
