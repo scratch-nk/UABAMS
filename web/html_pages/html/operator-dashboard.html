@@ -38,6 +38,27 @@
 
     <!-- Main Content -->
     <main class="main-content">
+
+        <!-- HIGH-G ALERT BANNER (hidden by default) -->
+        <div id="highGAlert" style="display:none; position:sticky; top:0; z-index:999;
+             background:#dc2626; color:#fff; padding:0.85rem 1.5rem;
+             display:none; align-items:center; gap:1rem; border-radius:0.5rem;
+             margin-bottom:1rem; animation:flashAlert 0.4s ease;">
+            <svg style="flex-shrink:0;width:28px;height:28px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div style="flex:1;">
+                <strong style="font-size:1.1rem;">HIGH-G IMPACT DETECTED</strong>
+                <span id="highGMsg" style="margin-left:0.75rem;font-size:0.95rem;"></span>
+            </div>
+            <button onclick="document.getElementById('highGAlert').style.display='none'"
+                    style="background:rgba(255,255,255,0.25);border:none;color:#fff;
+                           padding:0.3rem 0.75rem;border-radius:0.375rem;cursor:pointer;font-size:0.85rem;">
+                Dismiss
+            </button>
+        </div>
+
         <!-- Banner -->
         <div class="banner">
             <div class="banner-icon">
@@ -75,7 +96,7 @@
                 </svg>
                 VIEW ALERTS
             </button>
-            <button class="action-btn secondary">
+            <button class="action-btn secondary" onclick="window.open('/api/impacts/export/csv','_blank')">
                 <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
@@ -224,61 +245,147 @@
 
         <!-- Accelerometer Raw Values -->
         <div class="accel-grid">
-            <!-- Accelerometer 1 -->
+            <!-- Accelerometer 1 — Left (S1) -->
             <div class="accel-card">
                 <div class="accel-header">
-                    <h3>Accelerometer 1 - Raw Values</h3>
+                    <h3>Accelerometer 1 — Left (S1)</h3>
                     <div class="accel-badge cyan">ACCEL-1</div>
                 </div>
+
+                <div class="accel-section-label">Raw Axes</div>
                 <div class="values-grid">
                     <div class="value-box">
-                        <div class="value-label">X-Axis (m/s²)</div>
-                        <div class="value-number cyan" id="accel1X">0.0234</div>
+                        <div class="value-label">Ax (g)</div>
+                        <div class="value-number cyan" id="accel1X">—</div>
                     </div>
                     <div class="value-box">
-                        <div class="value-label">Y-Axis (m/s²)</div>
-                        <div class="value-number cyan" id="accel1Y">-0.0156</div>
+                        <div class="value-label">Ay (g)</div>
+                        <div class="value-number cyan" id="accel1Y">—</div>
                     </div>
                     <div class="value-box">
-                        <div class="value-label">Z-Axis (m/s²)</div>
-                        <div class="value-number cyan" id="accel1Z">9.8123</div>
+                        <div class="value-label">Az (g)</div>
+                        <div class="value-number cyan" id="accel1Z">—</div>
                     </div>
                     <div class="value-box">
-                        <div class="value-label">Magnitude (g)</div>
-                        <div class="value-number cyan" id="accel1Mag">2.3400</div>
+                        <div class="value-label">PEAK (g)</div>
+                        <div class="value-number cyan" id="accel1Peak">—</div>
                     </div>
                 </div>
+
+                <div class="accel-section-label">RMS &amp; Std Dev</div>
+                <div class="values-grid">
+                    <div class="value-box">
+                        <div class="value-label">RMS-V (g)</div>
+                        <div class="value-number cyan" id="accel1RmsV">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">RMS-L (g)</div>
+                        <div class="value-number cyan" id="accel1RmsL">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">SD-V (g)</div>
+                        <div class="value-number cyan" id="accel1SdV">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">SD-L (g)</div>
+                        <div class="value-number cyan" id="accel1SdL">—</div>
+                    </div>
+                </div>
+
+                <div class="accel-section-label">Peak-to-Peak &amp; Config</div>
+                <div class="values-grid">
+                    <div class="value-box">
+                        <div class="value-label">P2P-V (g)</div>
+                        <div class="value-number cyan" id="accel1P2pV">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">P2P-L (g)</div>
+                        <div class="value-number cyan" id="accel1P2pL">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">FS (Hz)</div>
+                        <div class="value-number cyan" id="accel1Fs">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">Window (ms)</div>
+                        <div class="value-number cyan" id="accel1Window">—</div>
+                    </div>
+                </div>
+
                 <div class="debug-info" id="debug1" style="display: none;">
-                    <div class="debug-text">DEBUG: Sample Rate: 100Hz | Offset: +0.0023 | Drift: 0.001%</div>
+                    <div class="debug-text">DEBUG: topic: adj/datalogger/sensors/left</div>
                 </div>
             </div>
 
-            <!-- Accelerometer 2 -->
+            <!-- Accelerometer 2 — Right (S2) -->
             <div class="accel-card">
                 <div class="accel-header">
-                    <h3>Accelerometer 2 - Raw Values</h3>
+                    <h3>Accelerometer 2 — Right (S2)</h3>
                     <div class="accel-badge purple">ACCEL-2</div>
                 </div>
+
+                <div class="accel-section-label">Raw Axes</div>
                 <div class="values-grid">
                     <div class="value-box">
-                        <div class="value-label">X-Axis (m/s²)</div>
-                        <div class="value-number purple" id="accel2X">0.0189</div>
+                        <div class="value-label">Ax (g)</div>
+                        <div class="value-number purple" id="accel2X">—</div>
                     </div>
                     <div class="value-box">
-                        <div class="value-label">Y-Axis (m/s²)</div>
-                        <div class="value-number purple" id="accel2Y">-0.0201</div>
+                        <div class="value-label">Ay (g)</div>
+                        <div class="value-number purple" id="accel2Y">—</div>
                     </div>
                     <div class="value-box">
-                        <div class="value-label">Z-Axis (m/s²)</div>
-                        <div class="value-number purple" id="accel2Z">9.8034</div>
+                        <div class="value-label">Az (g)</div>
+                        <div class="value-number purple" id="accel2Z">—</div>
                     </div>
                     <div class="value-box">
-                        <div class="value-label">Magnitude (g)</div>
-                        <div class="value-number purple" id="accel2Mag">2.2800</div>
+                        <div class="value-label">PEAK (g)</div>
+                        <div class="value-number purple" id="accel2Peak">—</div>
                     </div>
                 </div>
+
+                <div class="accel-section-label">RMS &amp; Std Dev</div>
+                <div class="values-grid">
+                    <div class="value-box">
+                        <div class="value-label">RMS-V (g)</div>
+                        <div class="value-number purple" id="accel2RmsV">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">RMS-L (g)</div>
+                        <div class="value-number purple" id="accel2RmsL">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">SD-V (g)</div>
+                        <div class="value-number purple" id="accel2SdV">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">SD-L (g)</div>
+                        <div class="value-number purple" id="accel2SdL">—</div>
+                    </div>
+                </div>
+
+                <div class="accel-section-label">Peak-to-Peak &amp; Config</div>
+                <div class="values-grid">
+                    <div class="value-box">
+                        <div class="value-label">P2P-V (g)</div>
+                        <div class="value-number purple" id="accel2P2pV">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">P2P-L (g)</div>
+                        <div class="value-number purple" id="accel2P2pL">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">FS (Hz)</div>
+                        <div class="value-number purple" id="accel2Fs">—</div>
+                    </div>
+                    <div class="value-box">
+                        <div class="value-label">Window (ms)</div>
+                        <div class="value-number purple" id="accel2Window">—</div>
+                    </div>
+                </div>
+
                 <div class="debug-info" id="debug2" style="display: none;">
-                    <div class="debug-text">DEBUG: Sample Rate: 100Hz | Offset: -0.0018 | Drift: 0.002%</div>
+                    <div class="debug-text">DEBUG: topic: adj/datalogger/sensors/right</div>
                 </div>
             </div>
         </div>
@@ -329,6 +436,7 @@
         </div>
     </main>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="../js/common.js"></script>
     <script src="../js/pages/operator-dashboard.js"></script>
 </body>

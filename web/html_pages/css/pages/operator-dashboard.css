@@ -232,6 +232,15 @@ body {
 
 .values-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
 
+.accel-section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    margin: 1rem 0 0.5rem;
+}
+
 .value-box {
     background-color: #f8fafc;
     border: 1px solid #e2e8f0;
@@ -315,4 +324,9 @@ body {
     .metrics-grid,
     .stats-grid,
     .action-grid { grid-template-columns: 1fr; }
+}
+
+@keyframes flashAlert {
+    0%   { opacity: 0; transform: translateY(-8px); }
+    100% { opacity: 1; transform: translateY(0); }
 }

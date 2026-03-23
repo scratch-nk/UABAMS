@@ -26,18 +26,32 @@ function updateTime() {
 setInterval(updateTime, 1000);
 updateTime();
 
-// Simulate live left-panel readings
-setInterval(() => {
-    document.getElementById('speed').textContent = (89 + Math.random() * 5).toFixed(2) + ' km/h';
+// ── Socket.io — real sensor data ──────────────────────────────────────────
+const socket = io();
 
-    const counter = parseInt(document.getElementById('counter').textContent.replace(/,/g, '')) + 1;
-    document.getElementById('counter').textContent = counter.toLocaleString();
+socket.on('sensor-data', (data) => {
+    const accelId = data.sensor === 'right' ? 2 : 1;
+    setAccelStatus(accelId, 'connected');
 
-    document.getElementById('ablVert').textContent = (2 + Math.random() * 0.8).toFixed(2) + ' g';
-    document.getElementById('ablLat').textContent  = (0.5 + Math.random() * 0.3).toFixed(2) + ' g';
-    document.getElementById('abrVert').textContent = (0.3 + Math.random() * 0.3).toFixed(2) + ' g';
-    document.getElementById('abrLat').textContent  = (0.08 + Math.random() * 0.06).toFixed(2) + ' g';
-}, 3000);
+    if (data.sensor === 'left') {
+        document.getElementById('ablVert').textContent = Math.abs(data.z).toFixed(2) + ' g';
+        document.getElementById('ablLat').textContent  = Math.abs(data.x).toFixed(2) + ' g';
+    } else if (data.sensor === 'right') {
+        document.getElementById('abrVert').textContent = Math.abs(data.z).toFixed(2) + ' g';
+        document.getElementById('abrLat').textContent  = Math.abs(data.x).toFixed(2) + ' g';
+    }
+});
+
+socket.on('accelerometer-data', (data) => {
+    setAccelStatus(1, 'connected');
+    document.getElementById('ablVert').textContent = Math.abs(data.z).toFixed(2) + ' g';
+    document.getElementById('ablLat').textContent  = Math.abs(data.x).toFixed(2) + ' g';
+});
+
+socket.on('disconnect', () => {
+    setAccelStatus(1, 'not-connected');
+    setAccelStatus(2, 'not-connected');
+});
 
 // Load page into right panel iframe
 function loadPage(pageUrl) {
