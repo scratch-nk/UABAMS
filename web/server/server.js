@@ -25,7 +25,7 @@ let peaksLog = loadPeaksLog();
 console.log(`Loaded ${peaksLog.length} existing impact records from JSON fallback`);
 
 // ── Express / Socket.IO ───────────────────────────────────────────────────
-const nano   = require('nano')('http://admin:ogdenmash@127.0.0.1:5984');
+const nano   = require('nano')('http://USER:PASSWORD@127.0.0.1:5984');
 const app    = express();
 const server = http.createServer(app);
 const io     = socketIo(server, { cors: { origin: '*', methods: ['GET', 'POST'] } });
