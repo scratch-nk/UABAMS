@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Events - RailMonitor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/pages/events.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Impact Events</h1>
+            <div class="filters">
+                <select id="severityFilter">
+                    <option value="all">All Severities</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                </select>
+                <button onclick="exportEvents()">
+                    <i class="fas fa-download"></i> Export
+                </button>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Total Events</div>
+                <div class="value" id="totalEvents">156</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">High Severity</div>
+                <div class="value" id="highEvents">23</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Medium Severity</div>
+                <div class="value" id="mediumEvents">45</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Low Severity</div>
+                <div class="value" id="lowEvents">88</div>
+            </div>
+        </div>
+
+        <div id="eventsList"></div>
+    </div>
+
+    <script src="../js/common.js"></script>
+    <script src="../js/pages/events.js"></script>
+</body>
+</html>
