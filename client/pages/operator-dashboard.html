@@ -36,8 +36,28 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="main-content">
+
+        <!-- HIGH-G ALERT BANNER -->
+        <div id="highGAlert" style="display:none; position:sticky; top:0; z-index:999;
+             background:#dc2626; color:#fff; padding:0.85rem 1.5rem;
+             align-items:center; gap:1rem; border-radius:0.5rem;
+             margin-bottom:1rem;">
+            <svg style="flex-shrink:0;width:28px;height:28px;" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <div style="flex:1;">
+                <strong style="font-size:1.1rem;">HIGH-G IMPACT DETECTED</strong>
+                <span id="highGMsg" style="margin-left:0.75rem;font-size:0.95rem;"></span>
+            </div>
+            <button onclick="document.getElementById('highGAlert').style.display='none'"
+                    style="background:rgba(255,255,255,0.25);border:none;color:#fff;
+                           padding:0.3rem 0.75rem;border-radius:0.375rem;cursor:pointer;font-size:0.85rem;">
+                Dismiss
+            </button>
+        </div>
+
         <!-- Banner -->
         <div class="banner">
             <div class="banner-icon">
@@ -49,19 +69,35 @@
             <p>High-level overview for operators. Quick access to critical information</p>
         </div>
 
-        <!-- Main Metrics -->
-        <div class="metrics-grid">
+        <!-- Main Metrics — IDs used directly by JS -->
+        <div class="metrics-grid" style="grid-template-columns: repeat(5, 1fr);">
             <div class="metric-card">
-                <div class="metric-value" id="impactsToday">0</div>
+                <div class="metric-value" id="impactsToday">—</div>
                 <div class="metric-label">Total Impacts Today</div>
             </div>
             <div class="metric-card">
-                <div class="metric-value" style="color: #dc2626;" id="highSeverity">0</div>
+                <div class="metric-value" style="color:#dc2626;" id="highSeverity">—</div>
                 <div class="metric-label">High Severity Events</div>
             </div>
             <div class="metric-card">
-                <div class="metric-value" id="maxPeak">0.00g</div>
+                <div class="metric-value" id="maxPeak">—</div>
                 <div class="metric-label">Maximum Peak</div>
+            </div>
+            <!-- Last Peak: most recent impact with P-class badge -->
+            <div class="metric-card">
+                <div class="metric-value" id="lastPeak">—</div>
+                <div style="margin-top:4px;">
+                    <span id="lastPeakClass" style="display:inline-block;padding:2px 10px;
+                          border-radius:20px;font-size:0.75rem;font-weight:700;
+                          background:#f1f5f9;color:#64748b;">—</span>
+                </div>
+                <div class="metric-label">Last Peak</div>
+            </div>
+            <!-- Distance: 0 when static, increments from GPS when moving -->
+            <div class="metric-card">
+                <div class="metric-value" id="totalDistance">0 m</div>
+                <div style="margin-top:4px;font-size:0.78rem;color:#64748b;" id="distanceKm">0.000 km</div>
+                <div class="metric-label">Distance Traveled</div>
             </div>
         </div>
 
@@ -75,7 +111,7 @@
                 </svg>
                 VIEW ALERTS
             </button>
-            <button class="action-btn secondary">
+            <button class="action-btn secondary" id="downloadCsvBtn">
                 <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
@@ -83,52 +119,53 @@
                 </svg>
                 DAILY REPORT
             </button>
-        </div>
 
-        <!-- Quick Statistics -->
-        <div class="quick-stats">
-            <h3>Quick Statistics</h3>
-            <div class="stats-grid">
-                <div class="stat-item">
-                    <div class="stat-icon-box">
-                        <svg class="icon-lg" fill="none" stroke="#0891b2" stroke-width="2" viewBox="0 0 24 24" style="margin: 0 auto; display: block;">
-                            <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
-                            <polyline points="17 6 23 6 23 12"/>
-                        </svg>
-                        <div class="stat-value">0</div>
+            <!-- CSV range modal -->
+            <div id="csvModal" style="display:none;position:fixed;inset:0;z-index:9999;
+                 background:rgba(0,0,0,0.5);align-items:center;justify-content:center;">
+                <div style="background:#fff;border-radius:16px;padding:1.75rem;max-width:380px;
+                            width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+                    <h3 style="margin:0 0 1rem;font-size:1.1rem;color:#1e293b;">
+                        Download Impact Report
+                    </h3>
+                    <p style="color:#64748b;font-size:0.875rem;margin-bottom:1.25rem;">
+                        Select the time range for the CSV export.
+                    </p>
+                    <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1.5rem;">
+                        <label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;
+                               border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;">
+                            <input type="radio" name="csvRange" value="24" checked style="accent-color:#3b82f6;">
+                            <span style="font-size:0.9rem;color:#1e293b;">Last 24 hours</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;
+                               border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;">
+                            <input type="radio" name="csvRange" value="168" style="accent-color:#3b82f6;">
+                            <span style="font-size:0.9rem;color:#1e293b;">Last 7 days</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;
+                               border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;">
+                            <input type="radio" name="csvRange" value="720" style="accent-color:#3b82f6;">
+                            <span style="font-size:0.9rem;color:#1e293b;">Last 30 days</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem;
+                               border:2px solid #e2e8f0;border-radius:8px;cursor:pointer;">
+                            <input type="radio" name="csvRange" value="8760" style="accent-color:#3b82f6;">
+                            <span style="font-size:0.9rem;color:#1e293b;">All time</span>
+                        </label>
                     </div>
-                    <div class="stat-label">Impacts Today</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-icon-box">
-                        <svg class="icon-lg" fill="none" stroke="#dc2626" stroke-width="2" viewBox="0 0 24 24" style="margin: 0 auto; display: block;">
-                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                            <line x1="12" y1="9" x2="12" y2="13"/>
-                            <line x1="12" y1="17" x2="12.01" y2="17"/>
-                        </svg>
-                        <div class="stat-value">0</div>
+                    <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+                        <button id="csvCancelBtn"
+                                style="padding:0.6rem 1.25rem;border:1px solid #e2e8f0;border-radius:8px;
+                                       background:#f8fafc;cursor:pointer;font-size:0.875rem;color:#64748b;">
+                            Cancel
+                        </button>
+                        <button id="csvDownloadBtn"
+                                style="padding:0.6rem 1.25rem;border:none;border-radius:8px;
+                                       background:#3b82f6;color:#fff;cursor:pointer;
+                                       font-size:0.875rem;font-weight:600;">
+                            Download CSV
+                        </button>
                     </div>
-                    <div class="stat-label">High Severity</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-icon-box">
-                        <svg class="icon-lg" fill="none" stroke="#16a34a" stroke-width="2" viewBox="0 0 24 24" style="margin: 0 auto; display: block;">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M12 6v6l4 2"/>
-                        </svg>
-                        <div class="stat-value">0.00g</div>
-                    </div>
-                    <div class="stat-label">Avg Peak</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-icon-box">
-                        <svg class="icon-lg" fill="none" stroke="#ea580c" stroke-width="2" viewBox="0 0 24 24" style="margin: 0 auto; display: block;">
-                            <circle cx="12" cy="12" r="10"/>
-                            <path d="M12 6v6l4 2"/>
-                        </svg>
-                        <div class="stat-value">0.00g</div>
-                    </div>
-                    <div class="stat-label">Max Peak</div>
                 </div>
             </div>
         </div>
@@ -149,10 +186,16 @@
                                 <rect x="14" y="4" width="4" height="16"/>
                             </svg>
                         </button>
-                        <button class="icon-btn" id="refreshBtn">
+                        <button class="icon-btn" id="refreshBtn" title="Reload chart data">
                             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                 <polyline points="23 4 23 10 17 10"/>
                                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                            </svg>
+                        </button>
+                        <!-- Reset button: clears display counters only, DB untouched -->
+                        <button class="icon-btn" id="resetBtn" title="Reset display counters">
+                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
                             </svg>
                         </button>
                     </div>
@@ -167,118 +210,72 @@
                 <div class="card-title">
                     <h3>System Health Check</h3>
                 </div>
-                <div class="health-grid">
-                    <div class="health-item operational">
-                        <div class="health-left">
-                            <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            <span>Accel-1</span>
-                        </div>
-                        <span class="health-status">Operational</span>
-                    </div>
-                    <div class="health-item operational">
-                        <div class="health-left">
-                            <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            <span>Accel-2</span>
-                        </div>
-                        <span class="health-status">Operational</span>
-                    </div>
-                    <div class="health-item operational">
-                        <div class="health-left">
-                            <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            <span>GPS</span>
-                        </div>
-                        <span class="health-status">Operational</span>
-                    </div>
-                    <div class="health-item operational">
-                        <div class="health-left">
-                            <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            <span>Comm</span>
-                        </div>
-                        <span class="health-status">Operational</span>
-                    </div>
-                    <div class="health-item operational">
-                        <div class="health-left">
-                            <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                                <polyline points="22 4 12 14.01 9 11.01"/>
-                            </svg>
-                            <span>Power</span>
-                        </div>
-                        <span class="health-status">Operational</span>
-                    </div>
-                </div>
+                <!-- Populated dynamically by JS from HEALTH_COMPONENTS -->
+                <div class="health-grid"></div>
             </div>
         </div>
 
         <!-- Accelerometer Raw Values -->
         <div class="accel-grid">
-            <!-- Accelerometer 1 -->
             <div class="accel-card">
                 <div class="accel-header">
-                    <h3>Accelerometer 1 - Raw Values</h3>
+                    <h3>Accelerometer 1 — Left (S1)</h3>
                     <div class="accel-badge cyan">ACCEL-1</div>
                 </div>
+                <div class="accel-section-label">Raw Axes</div>
                 <div class="values-grid">
-                    <div class="value-box">
-                        <div class="value-label">X-Axis (m/s²)</div>
-                        <div class="value-number cyan" id="accel1X">0.0234</div>
-                    </div>
-                    <div class="value-box">
-                        <div class="value-label">Y-Axis (m/s²)</div>
-                        <div class="value-number cyan" id="accel1Y">-0.0156</div>
-                    </div>
-                    <div class="value-box">
-                        <div class="value-label">Z-Axis (m/s²)</div>
-                        <div class="value-number cyan" id="accel1Z">9.8123</div>
-                    </div>
-                    <div class="value-box">
-                        <div class="value-label">Magnitude (g)</div>
-                        <div class="value-number cyan" id="accel1Mag">2.3400</div>
-                    </div>
+                    <div class="value-box"><div class="value-label">Ax (g)</div><div class="value-number cyan" id="accel1X">—</div></div>
+                    <div class="value-box"><div class="value-label">Ay (g)</div><div class="value-number cyan" id="accel1Y">—</div></div>
+                    <div class="value-box"><div class="value-label">Az (g)</div><div class="value-number cyan" id="accel1Z">—</div></div>
+                    <div class="value-box"><div class="value-label">PEAK (g)</div><div class="value-number cyan" id="accel1Peak">—</div></div>
                 </div>
-                <div class="debug-info" id="debug1" style="display: none;">
-                    <div class="debug-text">DEBUG: Sample Rate: 100Hz | Offset: +0.0023 | Drift: 0.001%</div>
+                <div class="accel-section-label">RMS &amp; Std Dev</div>
+                <div class="values-grid">
+                    <div class="value-box"><div class="value-label">RMS-V (g)</div><div class="value-number cyan" id="accel1RmsV">—</div></div>
+                    <div class="value-box"><div class="value-label">RMS-L (g)</div><div class="value-number cyan" id="accel1RmsL">—</div></div>
+                    <div class="value-box"><div class="value-label">SD-V (g)</div><div class="value-number cyan" id="accel1SdV">—</div></div>
+                    <div class="value-box"><div class="value-label">SD-L (g)</div><div class="value-number cyan" id="accel1SdL">—</div></div>
+                </div>
+                <div class="accel-section-label">Peak-to-Peak &amp; Config</div>
+                <div class="values-grid">
+                    <div class="value-box"><div class="value-label">P2P-V (g)</div><div class="value-number cyan" id="accel1P2pV">—</div></div>
+                    <div class="value-box"><div class="value-label">P2P-L (g)</div><div class="value-number cyan" id="accel1P2pL">—</div></div>
+                    <div class="value-box"><div class="value-label">FS (Hz)</div><div class="value-number cyan" id="accel1Fs">—</div></div>
+                    <div class="value-box"><div class="value-label">Window (ms)</div><div class="value-number cyan" id="accel1Window">—</div></div>
+                </div>
+                <div class="debug-info" id="debug1" style="display:none;">
+                    <div class="debug-text">DEBUG: topic: adj/datalogger/sensors/left</div>
                 </div>
             </div>
 
-            <!-- Accelerometer 2 -->
             <div class="accel-card">
                 <div class="accel-header">
-                    <h3>Accelerometer 2 - Raw Values</h3>
+                    <h3>Accelerometer 2 — Right (S2)</h3>
                     <div class="accel-badge purple">ACCEL-2</div>
                 </div>
+                <div class="accel-section-label">Raw Axes</div>
                 <div class="values-grid">
-                    <div class="value-box">
-                        <div class="value-label">X-Axis (m/s²)</div>
-                        <div class="value-number purple" id="accel2X">0.0189</div>
-                    </div>
-                    <div class="value-box">
-                        <div class="value-label">Y-Axis (m/s²)</div>
-                        <div class="value-number purple" id="accel2Y">-0.0201</div>
-                    </div>
-                    <div class="value-box">
-                        <div class="value-label">Z-Axis (m/s²)</div>
-                        <div class="value-number purple" id="accel2Z">9.8034</div>
-                    </div>
-                    <div class="value-box">
-                        <div class="value-label">Magnitude (g)</div>
-                        <div class="value-number purple" id="accel2Mag">2.2800</div>
-                    </div>
+                    <div class="value-box"><div class="value-label">Ax (g)</div><div class="value-number purple" id="accel2X">—</div></div>
+                    <div class="value-box"><div class="value-label">Ay (g)</div><div class="value-number purple" id="accel2Y">—</div></div>
+                    <div class="value-box"><div class="value-label">Az (g)</div><div class="value-number purple" id="accel2Z">—</div></div>
+                    <div class="value-box"><div class="value-label">PEAK (g)</div><div class="value-number purple" id="accel2Peak">—</div></div>
                 </div>
-                <div class="debug-info" id="debug2" style="display: none;">
-                    <div class="debug-text">DEBUG: Sample Rate: 100Hz | Offset: -0.0018 | Drift: 0.002%</div>
+                <div class="accel-section-label">RMS &amp; Std Dev</div>
+                <div class="values-grid">
+                    <div class="value-box"><div class="value-label">RMS-V (g)</div><div class="value-number purple" id="accel2RmsV">—</div></div>
+                    <div class="value-box"><div class="value-label">RMS-L (g)</div><div class="value-number purple" id="accel2RmsL">—</div></div>
+                    <div class="value-box"><div class="value-label">SD-V (g)</div><div class="value-number purple" id="accel2SdV">—</div></div>
+                    <div class="value-box"><div class="value-label">SD-L (g)</div><div class="value-number purple" id="accel2SdL">—</div></div>
+                </div>
+                <div class="accel-section-label">Peak-to-Peak &amp; Config</div>
+                <div class="values-grid">
+                    <div class="value-box"><div class="value-label">P2P-V (g)</div><div class="value-number purple" id="accel2P2pV">—</div></div>
+                    <div class="value-box"><div class="value-label">P2P-L (g)</div><div class="value-number purple" id="accel2P2pL">—</div></div>
+                    <div class="value-box"><div class="value-label">FS (Hz)</div><div class="value-number purple" id="accel2Fs">—</div></div>
+                    <div class="value-box"><div class="value-label">Window (ms)</div><div class="value-number purple" id="accel2Window">—</div></div>
+                </div>
+                <div class="debug-info" id="debug2" style="display:none;">
+                    <div class="debug-text">DEBUG: topic: adj/datalogger/sensors/right</div>
                 </div>
             </div>
         </div>
@@ -287,7 +284,7 @@
         <div class="card">
             <div class="card-header">
                 <div class="card-title">
-                    <h3 style="display: flex; align-items: center; gap: 0.5rem;">
+                    <h3 style="display:flex;align-items:center;gap:0.5rem;">
                         <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                             <polyline points="4 17 10 11 4 5"/>
                             <line x1="12" y1="19" x2="20" y2="19"/>
@@ -297,39 +294,19 @@
                 </div>
                 <button class="view-all-link">View All Logs</button>
             </div>
-            <div class="log-container">
-                <div class="log-entry">
-                    <span class="log-time">14:32:15</span>
-                    <span class="log-type warning">warning</span>
-                    <span class="log-message">Sensor calibration drift detected</span>
-                    <span class="log-sensor">[Accel-1]</span>
-                </div>
-                <div class="log-entry">
-                    <span class="log-time">14:28:03</span>
-                    <span class="log-type info">info</span>
-                    <span class="log-message">Health check passed</span>
-                    <span class="log-sensor">[System]</span>
-                </div>
-                <div class="log-entry">
-                    <span class="log-time">14:15:47</span>
-                    <span class="log-type error">error</span>
-                    <span class="log-message">Communication timeout</span>
-                    <span class="log-sensor">[GPS]</span>
-                </div>
-                <div class="log-entry">
-                    <span class="log-time">14:10:22</span>
-                    <span class="log-type info">info</span>
-                    <span class="log-message">Debug mode activated</span>
-                    <span class="log-sensor">[System]</span>
-                </div>
-            </div>
-            <div class="debug-info" id="debugLog" style="display: none; margin-top: 1rem;">
-                <div class="debug-text">DEBUG MODE ACTIVE: Extended logging enabled • Memory usage: 42% • CPU: 23% • Network latency: 12ms</div>
+            <!-- log-container populated dynamically by health events -->
+            <div class="log-container"></div>
+            <div class="debug-info" id="debugLog" style="display:none;margin-top:1rem;">
+                <div class="debug-text">DEBUG MODE ACTIVE: Extended logging enabled</div>
             </div>
         </div>
+
     </main>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="../js/common.js"></script>
+    <script src="http://192.168.0.125:5000/socket.io/socket.io.js"></script>
+    <script src="../js/pages/preload.js"></script>
     <script src="../js/pages/operator-dashboard.js"></script>
 </body>
 </html>

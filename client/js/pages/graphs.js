@@ -1,91 +1,176 @@
-/* graphs.js — Real-time acceleration graphs + RCI */
+/* =============================================================================
+   graphs.js — RailMonitor real-time graphs
+   Channel derivation from raw axes:
+     VERT = |Z|              (vertical peak, Z axis carries gravity + vibration)
+     LAT  = sqrt(X²+Y²)     (lateral peak, horizontal plane magnitude)
+   Applied per sensor side → 4 channels: AB-L-VERT, AB-L-LAT, AB-R-VERT, AB-R-LAT
+============================================================================= */
 
-// Timestamp display
-function updateTimestamp() {
-    const now = new Date();
-    document.getElementById('currentTimestamp').textContent =
-        now.toLocaleTimeString() + ' ' + now.toLocaleDateString();
+const SERVER_URL = 'http://192.168.0.125:5000';
+
+// ── Timestamp ─────────────────────────────────────────────────────────────
+(function tickTimestamp() {
+    const el = document.getElementById('currentTimestamp');
+    if (el) {
+        const n = new Date();
+        el.textContent = n.toLocaleTimeString() + ' ' + n.toLocaleDateString();
+    }
+    setTimeout(tickTimestamp, 1000);
+})();
+
+// ── Channel derivation ────────────────────────────────────────────────────
+function getVert(x, y, z) { return Math.abs(z); }
+function getLat (x, y, z) { return Math.sqrt(x * x + y * y); }
+
+// ── Distance tracking (10 m steps, advances on each left-sensor packet) ───
+const BASE_DISTANCE_M = 1390 * 1000; // adjust to match your train's start coordinate
+let distanceM = BASE_DISTANCE_M;
+
+function formatDistLabel(m) {
+    const km  = Math.floor(m / 1000);
+    const rem = m % 1000;
+    return km + '.' + String(rem).padStart(3, '0') + ' km';
+    // e.g. 1390.000 km → 1390.010 km → 1390.020 km ...
 }
-setInterval(updateTimestamp, 1000);
-updateTimestamp();
 
-// ── Chart 1: Acceleration vs Distance ──────────────────────────────────────
-const distanceCtx = document.getElementById('distanceChart').getContext('2d');
-const distancePoints = 100;
-const startDistance = 1390;
+function advanceDistance() { distanceM += 10; }
 
-const distanceChart = new Chart(distanceCtx, {
+// ── Rolling buffer helpers ────────────────────────────────────────────────
+const DIST_N = 100;  // 100 × 10 m = 1 km window
+const RAW_N  = 80;
+const RCI_N  = 60;
+
+function zeroBuf(n, v = 0) { return new Array(n).fill(v); }
+function emptyLabels(n)     { return new Array(n).fill(''); }
+
+const initDistLabels = Array.from({ length: DIST_N },
+    (_, i) => formatDistLabel(BASE_DISTANCE_M + i * 10));
+
+function roll(chart, dsIdx, value, label) {
+    chart.data.datasets[dsIdx].data.push(value);
+    chart.data.datasets[dsIdx].data.shift();
+    if (label !== undefined) {
+        chart.data.labels.push(label);
+        chart.data.labels.shift();
+    }
+}
+
+// ── Chart 1: Acceleration vs Distance — 4 channels ───────────────────────
+const distanceChart = new Chart(
+    document.getElementById('distanceChart').getContext('2d'), {
     type: 'line',
     data: {
-        labels: Array(distancePoints).fill(0).map((_, i) => (startDistance + i * 0.1).toFixed(1) + ' km'),
+        labels: [...initDistLabels],
         datasets: [
-            { label: 'AB-L-VERT', data: [], borderColor: '#22c55e', backgroundColor: 'transparent', borderWidth: 2, tension: 0.4, pointRadius: 0 },
-            { label: 'AB-L-LAT',  data: [], borderColor: '#eab308', backgroundColor: 'transparent', borderWidth: 2, tension: 0.4, pointRadius: 0 },
-            { label: 'AB-R-VERT', data: [], borderColor: '#ef4444', backgroundColor: 'transparent', borderWidth: 2, tension: 0.4, pointRadius: 0 },
-            { label: 'AB-R-LAT',  data: [], borderColor: '#8b5cf6', backgroundColor: 'transparent', borderWidth: 2, tension: 0.4, pointRadius: 0 }
+            { label: 'AB-L-VERT', data: zeroBuf(DIST_N), borderColor: '#22c55e', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+            { label: 'AB-L-LAT',  data: zeroBuf(DIST_N), borderColor: '#eab308', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+            { label: 'AB-R-VERT', data: zeroBuf(DIST_N), borderColor: '#ef4444', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+            { label: 'AB-R-LAT',  data: zeroBuf(DIST_N), borderColor: '#8b5cf6', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 }
         ]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: { legend: { display: false } },
         scales: {
-            y: { beginAtZero: true, title: { display: true, text: 'Acceleration (m/s²)' }, grid: { color: '#f1f5f9' } },
-            x: { title: { display: true, text: 'Distance (km)' }, ticks: { maxRotation: 45, maxTicksLimit: 10 } }
+            y: {
+                beginAtZero: true,
+                title: { display: true, text: 'Acceleration (g)' },
+                grid: { color: '#f1f5f9' },
+                ticks: { callback: v => v.toFixed(3) }
+            },
+            x: {
+                title: { display: true, text: 'Distance (km)' },
+                ticks: { maxRotation: 45, maxTicksLimit: 10 }
+            }
         }
     }
 });
 
-// ── Charts 2a/2b: Raw X,Y,Z ──────────────────────────────────────────────
-function makeRawChart(canvasId) {
-    return new Chart(document.getElementById(canvasId).getContext('2d'), {
+// ── Raw axis subplot factory ───────────────────────────────────────────────
+// One chart per axis — single dataset, single Y-axis, no X labels
+// Each subplot is 80px tall, stacked vertically inside the card
+function makeSubplot(canvasId, color, initVal = 0) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+    return new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
-            labels: Array(50).fill(0).map((_, i) => i),
-            datasets: [
-                { label: 'X-Axis', data: [], borderColor: '#ef4444', borderWidth: 2, tension: 0.4, pointRadius: 0 },
-                { label: 'Y-Axis', data: [], borderColor: '#22c55e', borderWidth: 2, tension: 0.4, pointRadius: 0 },
-                { label: 'Z-Axis', data: [], borderColor: '#3b82f6', borderWidth: 2, tension: 0.4, pointRadius: 0 }
-            ]
+            labels: zeroBuf(RAW_N, ''),
+            datasets: [{
+                data:            zeroBuf(RAW_N, initVal),
+                borderColor:     color,
+                backgroundColor: color + '18',
+                borderWidth:     1.5,
+                tension:         0.3,
+                pointRadius:     0,
+                fill:            true
+            }]
         },
         options: {
-            responsive: true,
+            responsive:          true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { y: { beginAtZero: false }, x: { display: false } }
+            animation:           false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: {
+                y: {
+                    grid:  { color: '#f1f5f9' },
+                    ticks: {
+                        maxTicksLimit: 3,
+                        font:  { size: 9 },
+                        color: '#94a3b8',
+                        callback: v => v.toFixed(2)
+                    }
+                },
+                x: { display: false }
+            }
         }
     });
 }
 
-const rawChart1 = makeRawChart('rawChart1');
-const rawChart2 = makeRawChart('rawChart2');
+// ── 6 subplot charts: X, Y, Z × 2 accelerometers ─────────────────────────
+const subplots = {
+    s1: {
+        x: makeSubplot('raw1X_chart', '#ef4444', 0),
+        y: makeSubplot('raw1Y_chart', '#22c55e', 0),
+        z: makeSubplot('raw1Z_chart', '#3b82f6', 9.8)
+    },
+    s2: {
+        x: makeSubplot('raw2X_chart', '#ef4444', 0),
+        y: makeSubplot('raw2Y_chart', '#22c55e', 0),
+        z: makeSubplot('raw2Z_chart', '#3b82f6', 9.8)
+    }
+};
+
+// Push one value into a subplot rolling buffer and update
+function pushSubplot(chart, value) {
+    if (!chart) return;
+    chart.data.datasets[0].data.shift();
+    chart.data.datasets[0].data.push(value);
+    chart.update('none');
+}
+
+
 
 // ── Chart 3: Ride Comfort Index ───────────────────────────────────────────
-const rciCtx = document.getElementById('rciChart').getContext('2d');
-const rciPoints = 50;
-
-const rciChart = new Chart(rciCtx, {
+const rciChart = new Chart(
+    document.getElementById('rciChart').getContext('2d'), {
     type: 'line',
     data: {
-        labels: Array(rciPoints).fill(0).map((_, i) => {
-            const d = new Date();
-            d.setMinutes(d.getMinutes() - (rciPoints - i) * 30);
-            return d.getHours() + ':' + d.getMinutes().toString().padStart(2, '0');
-        }),
+        labels: emptyLabels(RCI_N),
         datasets: [{
-            label: 'Ride Comfort Index',
-            data: [],
+            label: 'RCI',
+            data: zeroBuf(RCI_N, 50),
             borderColor: '#3b82f6',
             backgroundColor: 'rgba(59,130,246,0.1)',
-            borderWidth: 2,
-            tension: 0.4,
-            fill: true,
-            pointRadius: 2
+            borderWidth: 2, tension: 0.4, fill: true, pointRadius: 2
         }]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: false,
         plugins: { legend: { display: false } },
         scales: {
             y: { min: 0, max: 100, title: { display: true, text: 'RCI Score' }, grid: { color: '#f1f5f9' } },
@@ -94,143 +179,151 @@ const rciChart = new Chart(rciCtx, {
     }
 });
 
-// ── Data generators ───────────────────────────────────────────────────────
-function generateDistanceData() {
-    return [
-        Array(distancePoints).fill(0).map(() => 2.2 + Math.random() * 1.5),
-        Array(distancePoints).fill(0).map(() => 0.5 + Math.random() * 0.8),
-        Array(distancePoints).fill(0).map(() => 0.3 + Math.random() * 0.5),
-        Array(distancePoints).fill(0).map(() => 0.1 + Math.random() * 0.2)
-    ];
+// ── RCI: derived from VERT (Z peak) — ISO 2631 simplified ─────────────────
+// 0 g = 100 (perfect), 2 g = 0 (very poor)
+function vertToRCI(vert) {
+    return Math.round(Math.max(0, Math.min(100, 100 - (vert / 2.0) * 100)));
 }
 
-function generateRawData() {
-    return {
-        accel1: {
-            x: Array(50).fill(0).map(() =>  0.10 + Math.random() * 0.20),
-            y: Array(50).fill(0).map(() => -0.10 + Math.random() * 0.20),
-            z: Array(50).fill(0).map(() =>  9.80 + Math.random() * 0.10)
-        },
-        accel2: {
-            x: Array(50).fill(0).map(() =>  0.08 + Math.random() * 0.15),
-            y: Array(50).fill(0).map(() => -0.08 + Math.random() * 0.15),
-            z: Array(50).fill(0).map(() =>  9.78 + Math.random() * 0.10)
-        }
-    };
-}
-
-function generateRCIData() {
-    const data = [];
-    let val = 70;
-    for (let i = 0; i < rciPoints; i++) {
-        val += (Math.random() - 0.5) * 8;
-        val = Math.max(30, Math.min(95, val));
-        data.push(val);
-    }
-    return data;
-}
-
-// ── Initialize ────────────────────────────────────────────────────────────
-let distData = generateDistanceData();
-let rawData  = generateRawData();
-let rciData  = generateRCIData();
-
-distanceChart.data.datasets.forEach((ds, i) => ds.data = distData[i]);
-rawChart1.data.datasets[0].data = rawData.accel1.x;
-rawChart1.data.datasets[1].data = rawData.accel1.y;
-rawChart1.data.datasets[2].data = rawData.accel1.z;
-rawChart2.data.datasets[0].data = rawData.accel2.x;
-rawChart2.data.datasets[1].data = rawData.accel2.y;
-rawChart2.data.datasets[2].data = rawData.accel2.z;
-rciChart.data.datasets[0].data  = rciData;
-
-distanceChart.update(); rawChart1.update(); rawChart2.update(); rciChart.update();
-
-// Initial legend values
-document.getElementById('distVal1').textContent = distData[0][distData[0].length-1].toFixed(2) + ' m/s²';
-document.getElementById('distVal2').textContent = distData[1][distData[1].length-1].toFixed(2) + ' m/s²';
-document.getElementById('distVal3').textContent = distData[2][distData[2].length-1].toFixed(2) + ' m/s²';
-document.getElementById('distVal4').textContent = distData[3][distData[3].length-1].toFixed(2) + ' m/s²';
-document.getElementById('raw1X').textContent = rawData.accel1.x[rawData.accel1.x.length-1].toFixed(3);
-document.getElementById('raw1Y').textContent = rawData.accel1.y[rawData.accel1.y.length-1].toFixed(3);
-document.getElementById('raw1Z').textContent = rawData.accel1.z[rawData.accel1.z.length-1].toFixed(2);
-document.getElementById('raw2X').textContent = rawData.accel2.x[rawData.accel2.x.length-1].toFixed(3);
-document.getElementById('raw2Y').textContent = rawData.accel2.y[rawData.accel2.y.length-1].toFixed(3);
-document.getElementById('raw2Z').textContent = rawData.accel2.z[rawData.accel2.z.length-1].toFixed(2);
-
-function setRCIStatus(val) {
+function setRCIStatus(score) {
     const el = document.getElementById('rciStatus');
-    if (val >= 80)      { el.textContent = 'Excellent'; el.className = 'rci-status status-excellent'; }
-    else if (val >= 60) { el.textContent = 'Good';      el.className = 'rci-status status-good'; }
-    else if (val >= 40) { el.textContent = 'Fair';      el.className = 'rci-status status-fair'; }
-    else                { el.textContent = 'Poor';      el.className = 'rci-status status-poor'; }
+    if (!el) return;
+    if      (score >= 80) { el.textContent = 'Excellent'; el.className = 'rci-status status-excellent'; }
+    else if (score >= 60) { el.textContent = 'Good';      el.className = 'rci-status status-good'; }
+    else if (score >= 40) { el.textContent = 'Fair';      el.className = 'rci-status status-fair'; }
+    else                  { el.textContent = 'Poor';      el.className = 'rci-status status-poor'; }
 }
 
-const currentRCI = rciData[rciData.length-1];
-document.getElementById('rciCurrent').textContent = Math.round(currentRCI);
-setRCIStatus(currentRCI);
-document.getElementById('rciAvg').textContent   = Math.round(rciData.reduce((a,b) => a+b, 0) / rciData.length);
-document.getElementById('rciBest').textContent  = Math.round(Math.max(...rciData));
-document.getElementById('rciWorst').textContent = Math.round(Math.min(...rciData));
+// ── Sensor cache (holds latest derived values per side) ───────────────────
+const cache = {
+    left:  { x: 0, y: 0, z: 0, vert: 0, lat: 0 },
+    right: { x: 0, y: 0, z: 0, vert: 0, lat: 0 }
+};
 
-// ── Real-time updates (every 2 s) ─────────────────────────────────────────
-setInterval(() => {
-    distanceChart.data.datasets.forEach((ds, i) => {
-        ds.data.shift();
-        ds.data.push([2.2, 0.5, 0.3, 0.1][i] + Math.random() * [1.5, 0.8, 0.5, 0.2][i]);
+// ── Batch render via rAF ──────────────────────────────────────────────────
+let rafPending = false;
+function scheduleRender() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+        distanceChart.update('none');
+        rciChart.update('none');
+        // subplots update inline via pushSubplot — no batch needed
+        rafPending = false;
     });
-    document.getElementById('distVal1').textContent = distanceChart.data.datasets[0].data[distancePoints-1].toFixed(2) + ' m/s²';
-    document.getElementById('distVal2').textContent = distanceChart.data.datasets[1].data[distancePoints-1].toFixed(2) + ' m/s²';
-    document.getElementById('distVal3').textContent = distanceChart.data.datasets[2].data[distancePoints-1].toFixed(2) + ' m/s²';
-    document.getElementById('distVal4').textContent = distanceChart.data.datasets[3].data[distancePoints-1].toFixed(2) + ' m/s²';
+}
 
-    ['accel1', 'accel2'].forEach((accel, idx) => {
-        const chart = idx === 0 ? rawChart1 : rawChart2;
-        ['x', 'y', 'z'].forEach((axis, axisIdx) => {
-            chart.data.datasets[axisIdx].data.shift();
-            const base = axis === 'x' ? (idx === 0 ? 0.15 : 0.12)
-                       : axis === 'y' ? (idx === 0 ? -0.05 : -0.04)
-                       :                (idx === 0 ? 9.82  : 9.80);
-            chart.data.datasets[axisIdx].data.push(base + (Math.random() - 0.5) * 0.1);
-        });
-    });
+// ── Socket.IO ─────────────────────────────────────────────────────────────
+if (typeof io === 'undefined') {
+    console.error('[graphs] Socket.IO not loaded! Add this to graphs.html <head>:\n<script src="http://192.168.0.125:5000/socket.io/socket.io.js"><\/script>');
+}
 
-    const l1 = rawChart1.data.datasets;
-    document.getElementById('raw1X').textContent = l1[0].data[l1[0].data.length-1].toFixed(3);
-    document.getElementById('raw1Y').textContent = l1[1].data[l1[1].data.length-1].toFixed(3);
-    document.getElementById('raw1Z').textContent = l1[2].data[l1[2].data.length-1].toFixed(2);
+const socket = (typeof io !== 'undefined') ? io(SERVER_URL, {
+    transports: ['websocket', 'polling'],
+    reconnectionDelay: 1000,
+    reconnectionAttempts: Infinity
+}) : { on: () => {} }; // no-op fallback so rest of file doesn't crash
 
-    const l2 = rawChart2.data.datasets;
-    document.getElementById('raw2X').textContent = l2[0].data[l2[0].data.length-1].toFixed(3);
-    document.getElementById('raw2Y').textContent = l2[1].data[l2[1].data.length-1].toFixed(3);
-    document.getElementById('raw2Z').textContent = l2[2].data[l2[2].data.length-1].toFixed(2);
+socket.on('connect',       () => console.log('[graphs] Socket connected ✓'));
+socket.on('disconnect',    r  => console.warn('[graphs] Disconnected:', r));
+socket.on('connect_error', e  => console.error('[graphs] Error:', e.message));
 
-    rciChart.data.datasets[0].data.shift();
-    let newRCI = rciChart.data.datasets[0].data[rciChart.data.datasets[0].data.length-1] + (Math.random() - 0.5) * 6;
-    newRCI = Math.max(30, Math.min(95, newRCI));
-    rciChart.data.datasets[0].data.push(newRCI);
+// ── Pre-fill all charts from DB on load ───────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    if (typeof window.preloadGraphHistory === 'function') {
+        window.preloadGraphHistory(distanceChart, subplots);
+    }
+});
 
-    document.getElementById('rciCurrent').textContent = Math.round(newRCI);
-    setRCIStatus(newRCI);
+socket.on('accelerometer-data', data => {
+    const side = data.sensor;
+    if (side !== 'left' && side !== 'right') return;
 
-    const allRCI = rciChart.data.datasets[0].data;
-    document.getElementById('rciAvg').textContent   = Math.round(allRCI.reduce((a,b) => a+b, 0) / allRCI.length);
-    document.getElementById('rciBest').textContent  = Math.round(Math.max(...allRCI));
-    document.getElementById('rciWorst').textContent = Math.round(Math.min(...allRCI));
+    const x = data.x ?? 0;
+    const y = data.y ?? 0;
+    const z = data.z ?? 0;
 
-    distanceChart.update(); rawChart1.update(); rawChart2.update(); rciChart.update();
-}, 2000);
+    // Derive channels from raw axes
+    const vert = getVert(x, y, z);   // |Z|
+    const lat  = getLat(x, y, z);    // sqrt(X²+Y²)
 
-// ── Control functions ─────────────────────────────────────────────────────
+    // Update cache
+    cache[side].x    = x;
+    cache[side].y    = y;
+    cache[side].z    = z;
+    cache[side].vert = vert;
+    cache[side].lat  = lat;
+
+    // ── Raw subplots: push X, Y, Z into their individual charts ──────────
+    const sp  = side === 'left' ? subplots.s1 : subplots.s2;
+    const pfx = side === 'left' ? 'raw1'       : 'raw2';
+
+    pushSubplot(sp.x, x);
+    pushSubplot(sp.y, y);
+    pushSubplot(sp.z, z);
+
+    document.getElementById(pfx + 'X').textContent = x.toFixed(4) + ' g';
+    document.getElementById(pfx + 'Y').textContent = y.toFixed(4) + ' g';
+    document.getElementById(pfx + 'Z').textContent = z.toFixed(4) + ' g';
+
+    // ── Distance chart: left sensor drives label + distance advance ───────
+    if (side === 'left') {
+        advanceDistance();
+        const distLabel = formatDistLabel(distanceM);
+
+        roll(distanceChart, 0, vert,              distLabel); // AB-L-VERT
+        roll(distanceChart, 1, lat);                          // AB-L-LAT
+        roll(distanceChart, 2, cache.right.vert);             // AB-R-VERT (latest cached)
+        roll(distanceChart, 3, cache.right.lat);              // AB-R-LAT  (latest cached)
+
+        // ── RCI from left VERT ────────────────────────────────────────────
+        const rci = vertToRCI(vert);
+        roll(rciChart, 0, rci, distLabel);
+
+        document.getElementById('rciCurrent').textContent = rci;
+        setRCIStatus(rci);
+
+        const d = rciChart.data.datasets[0].data;
+        document.getElementById('rciAvg').textContent   = Math.round(d.reduce((a, b) => a + b, 0) / d.length);
+        document.getElementById('rciBest').textContent  = Math.round(Math.max(...d));
+        document.getElementById('rciWorst').textContent = Math.round(Math.min(...d));
+    }
+
+    // ── Legend: live derived values ───────────────────────────────────────
+    document.getElementById('distVal1').textContent = cache.left.vert.toFixed(4)  + ' g';
+    document.getElementById('distVal2').textContent = cache.left.lat.toFixed(4)   + ' g';
+    document.getElementById('distVal3').textContent = cache.right.vert.toFixed(4) + ' g';
+    document.getElementById('distVal4').textContent = cache.right.lat.toFixed(4)  + ' g';
+
+    scheduleRender();
+});
+
+// ── Control buttons ───────────────────────────────────────────────────────
 function setDistanceRange(range) {
-    document.querySelectorAll('.graph-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.graph-controls .graph-btn').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
 }
-
 function setRCIRange(range) {
-    document.querySelectorAll('.graph-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.graph-controls .graph-btn').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
 }
-
 window.setDistanceRange = setDistanceRange;
-window.setRCIRange = setRCIRange;
+window.setRCIRange      = setRCIRange;
+
+// ── Threshold sync — fetch from server, update live on config change ───────
+let graphThresholds = { p1Min: 5, p1Max: 10, p2Min: 10, p2Max: 20, p3Min: 20 };
+
+(async function loadGraphThresholds() {
+    try {
+        const res = await fetch(`${SERVER_URL}/api/thresholds`);
+        graphThresholds = await res.json();
+        console.log('[graphs] Thresholds loaded:', graphThresholds);
+    } catch (e) {
+        console.warn('[graphs] Using default thresholds');
+    }
+})();
+
+socket.on('thresholds-updated', (t) => {
+    graphThresholds = t;
+    console.log('[graphs] Thresholds updated live:', t);
+});
