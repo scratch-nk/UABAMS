@@ -106,38 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-<<<<<<< HEAD
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-=======
 // ── Helpers ────────────────────────────────────────────────────────────────
 function timeAgo(isoStr) {
     const diffMs  = Date.now() - new Date(isoStr).getTime();
@@ -265,16 +233,11 @@ fetchActiveSensors();
 fetchActiveAlerts();
 fetchSystemHealth();
 
-// ── Poll everything from DB every 3s ─────────────────────────────────────
-setInterval(() => {
-    fetchChartFromDB();
-    fetchActiveSensors();
-    fetchSystemHealth();
-}, 3000);
-
-// Uptime and alerts are slower-moving — poll every 15s
+// ── Poll everything from DB ───────────────────────────────────────────────
+setInterval(fetchChartFromDB, 1000);   // chart: every 3s
 setInterval(() => {
     fetchUptime();
+    fetchActiveSensors();
     fetchActiveAlerts();
-}, 15000);
->>>>>>> b1292cff834e8906680761efd9d62460fff7bfa4
+    fetchSystemHealth();
+}, 1000);                             // KPIs: every 1S

@@ -396,6 +396,199 @@ app.get('/api/realtime/status', (req, res) => {
     });
 });
 
+// ── Management Dashboard APIs ─────────────────────────────────────────────
+
+// GET /api/management/sensor-chart?hours=24
+// Hourly-bucketed average gForce for the sensor performance line chart
+app.get('/api/management/sensor-chart', async (req, res) => {
+    const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+    try {
+        const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
+        const all    = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['timestamp', 'gForce'],
+            limit:    10000
+        });
+
+        const buckets = {};
+        for (const doc of all.docs) {
+            const h = doc.timestamp.slice(0, 13); // "YYYY-MM-DDTHH"
+            if (!buckets[h]) buckets[h] = { sum: 0, count: 0 };
+            buckets[h].sum   += doc.gForce || 0;
+            buckets[h].count += 1;
+        }
+
+        const now    = new Date();
+        const result = [];
+        for (let i = hours - 1; i >= 0; i--) {
+            const d     = new Date(now.getTime() - i * 3600000);
+            const h     = d.toISOString().slice(0, 13);
+            const label = `${String(d.getHours()).padStart(2, '0')}:00`;
+            const b     = buckets[h];
+            result.push({ label, avg: b ? +(b.sum / b.count).toFixed(4) : null });
+        }
+        res.json(result);
+    } catch (e) {
+        console.error('/api/management/sensor-chart error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/management/sensor-chart-recent
+// Last 2 min of per-sensor readings for the rolling chart (stale = empty)
+app.get('/api/management/sensor-chart-recent', async (_req, res) => {
+    try {
+        const cutoff = new Date(Date.now() - 2 * 60000).toISOString();
+        const all    = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['sensor', 'gForce', 'timestamp'],
+            limit:    5000
+        });
+        // Sort by timestamp
+        all.docs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        // Pair readings: for each timestamp bucket (per second) emit one point
+        const buckets = {};
+        for (const doc of all.docs) {
+            const sec = doc.timestamp.slice(0, 19); // "YYYY-MM-DDTHH:MM:SS"
+            if (!buckets[sec]) buckets[sec] = { ts: sec, left: null, right: null };
+            buckets[sec][doc.sensor] = doc.gForce || 0;
+        }
+        const result = Object.values(buckets).sort((a, b) => a.ts.localeCompare(b.ts));
+        res.json(result);
+    } catch (e) {
+        console.error('/api/management/sensor-chart-recent error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/management/uptime
+// % of hours in last 24 h that had at least one sensor reading
+app.get('/api/management/uptime', async (req, res) => {
+    const hours = 24;
+    try {
+        const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
+        const all    = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['timestamp'],
+            limit:    10000
+        });
+        const activeHours = new Set(all.docs.map(d => d.timestamp.slice(0, 13)));
+        const pct         = +((activeHours.size / hours) * 100).toFixed(1);
+        res.json({
+            uptime_pct:      pct,
+            active_hours:    activeHours.size,
+            window_hours:    hours,
+            server_uptime_s: Math.floor(process.uptime())
+        });
+    } catch (e) {
+        console.error('/api/management/uptime error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/management/active-sensors
+// Sensors seen in last 24 h; "online" = sent data in last 10 seconds
+app.get('/api/management/active-sensors', async (req, res) => {
+    try {
+        const now       = Date.now();
+        const cutoff24h = new Date(now - 24 * 3600000).toISOString();
+        const cutoff10s = new Date(now - 10 * 1000).toISOString();
+
+        const all = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff24h } },
+            fields:   ['sensor', 'timestamp'],
+            limit:    10000
+        });
+
+        // Track last-seen timestamp per sensor
+        const lastSeen = {};
+        for (const doc of all.docs) {
+            if (!lastSeen[doc.sensor] || doc.timestamp > lastSeen[doc.sensor])
+                lastSeen[doc.sensor] = doc.timestamp;
+        }
+
+        const sensors = Object.keys(lastSeen);
+        // A sensor is "online" if it sent data in the last 10 seconds
+        const onlineSensors = sensors.filter(s => lastSeen[s] >= cutoff10s);
+        const knownSensors  = sensors.filter(s => lastSeen[s] <  cutoff10s);
+
+        res.json({
+            count:          onlineSensors.length,
+            total_known:    sensors.length,
+            online:         onlineSensors,
+            last_known:     knownSensors,
+            last_seen:      lastSeen   // ISO timestamp per sensor
+        });
+    } catch (e) {
+        console.error('/api/management/active-sensors error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/management/active-alerts
+// HIGH/MEDIUM/LOW impact counts from peaksLog in last 24 h
+app.get('/api/management/active-alerts', async (req, res) => {
+    try {
+        const cutoff = new Date(Date.now() - 24 * 3600000).toISOString();
+        const recent = peaksLog.filter(p => p.timestamp >= cutoff);
+        const high   = recent.filter(p => p.severity === 'HIGH').length;
+        const medium = recent.filter(p => p.severity === 'MEDIUM').length;
+        const low    = recent.filter(p => p.severity === 'LOW').length;
+        res.json({
+            total:             recent.length,
+            high, medium, low,
+            require_attention: high + medium,
+            latest: [...recent].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 5)
+        });
+    } catch (e) {
+        console.error('/api/management/active-alerts error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/management/system-health
+// Last-known gForce per sensor (look back up to 6 h) → operational/warning/critical
+app.get('/api/management/system-health', async (req, res) => {
+    try {
+        const now       = Date.now();
+        const cutoff24h = new Date(now - 24 * 3600000).toISOString();
+        const cutoff5m  = new Date(now - 10 * 1000).toISOString(); // online = last 10s
+
+        const all = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff24h } },
+            fields:   ['sensor', 'gForce', 'timestamp'],
+            limit:    10000
+        });
+
+        // Keep latest reading per sensor
+        const latest = {};
+        for (const doc of all.docs) {
+            if (!latest[doc.sensor] || doc.timestamp > latest[doc.sensor].timestamp)
+                latest[doc.sensor] = doc;
+        }
+
+        let operational = 0, warning = 0, critical = 0;
+        for (const doc of Object.values(latest)) {
+            const g      = doc.gForce || 0;
+            const isLive = doc.timestamp >= cutoff5m;
+            if (!isLive) {
+                // sensor not seen recently → treat as offline (critical)
+                critical++;
+            } else if (g >= 15) critical++;
+            else if  (g >= 5)  warning++;
+            else               operational++;
+        }
+
+        // If no data at all in last 6 h, both sensors are unknown/critical
+        if (Object.keys(latest).length === 0) critical = 2;
+
+        res.json({ operational, warning, critical, total: operational + warning + critical });
+    } catch (e) {
+        console.error('/api/management/system-health error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/health', async (req, res) => {
     try {
         const dbs = await nano.db.list();
