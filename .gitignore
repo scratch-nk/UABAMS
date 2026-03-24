@@ -21,3 +21,4 @@ desktop.ini
 *.key
 secrets.*
 config.local.*
+bridge/venv/
