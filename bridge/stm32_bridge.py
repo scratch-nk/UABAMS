@@ -16,11 +16,16 @@ MQTT_HOST = "192.168.0.156"
 #MQTT_HOST = "10.178.215.92"
 MQTT_PORT = 1883
 
-MQTT_TOPIC_LEFT = "adj/datalogger/sensors/left"
-MQTT_TOPIC_RIGHT = "adj/datalogger/sensors/right"
-MQTT_TOPIC_HEALTH = "adj/datalogger/health"
-MQTT_TOPIC_EVENT = "adj/datalogger/event"
-MQTT_TOPIC_CONTROL = "adj/datalogger/control"
+MQTT_TOPIC_LEFT                = "adj/datalogger/sensors/left"
+MQTT_TOPIC_RIGHT               = "adj/datalogger/sensors/right"
+MQTT_TOPIC_EVENT_GPS           = "adj/datalogger/sensors/gps"
+MQTT_TOPIC_EVENT               = "adj/datalogger/sensors/event"
+
+MQTT_TOPIC_HEALTH              = "adj/datalogger/health"
+MQTT_TOPIC_HEALTH_JUNCTION_BOX = "adj/datalogger/health/junction_box"  # Health of junction box board
+MQTT_TOPIC_HEALTH_DATA_LOGGER  = "adj/datalogger/health/data_logger"   # Health of data logger board
+
+MQTT_TOPIC_CLIENT_REQUEST      = "adj/datalogger/client_request"       # Client request sent to Junction box viw MQTT
 
 BAUD_RATE = 115200
 
@@ -95,10 +100,10 @@ def main():
     client.on_message = on_message
     try:
         client.connect(MQTT_HOST, MQTT_PORT, 60)
-        client.subscribe(MQTT_TOPIC_CONTROL)
+        client.subscribe(MQTT_TOPIC_CLIENT_REQUEST)
         client.loop_start()
         print(f"MQTT Connected → {MQTT_HOST}")
-        print(f"Subscribed to → {MQTT_TOPIC_CONTROL}")
+        print(f"Subscribed to → {MQTT_TOPIC_CLIENT_REQUEST}")
     except Exception as e:
         print(f"MQTT error: {e}")
         return
