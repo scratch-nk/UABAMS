@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Threshold Configuration - RailMonitor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/pages/configuration.css">
+</head>
+<body>
+    <div class="container">
+        <div class="config-card">
+            <h1>Threshold Configuration</h1>
+            <p class="subtitle">Configure priority thresholds and peak limits for intelligent impact detection</p>
+
+            <!-- Current Configuration Display -->
+            <div class="current-config" id="currentConfig">
+                <h4><i class="fas fa-check-circle"></i> Current Active Configuration</h4>
+                <div class="config-badges" id="configBadges">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+
+            <!-- Priority Thresholds Section -->
+            <div class="threshold-section">
+                <div class="section-title">
+                    <i class="fas fa-sliders-h"></i>
+                    <h2>Priority Thresholds</h2>
+                </div>
+
+                <div class="priority-grid">
+                    <!-- P1 Card -->
+                    <div class="priority-card">
+                        <div class="priority-header">
+                            <div class="priority-icon p1-icon">P1</div>
+                            <h3>Medium Priority</h3>
+                        </div>
+                        <p class="priority-desc">Moderate impacts requiring monitoring</p>
+                        <div class="threshold-input">
+                            <label>Min Threshold (g)</label>
+                            <input type="number" id="p1Min" value="5" step="0.1" min="0">
+                        </div>
+                        <div class="threshold-input">
+                            <label>Max Threshold (g)</label>
+                            <input type="number" id="p1Max" value="10" step="0.1" min="0">
+                        </div>
+                        <div class="threshold-range">
+                            Range: <span id="p1Range">5g - 10g</span>
+                        </div>
+                    </div>
+
+                    <!-- P2 Card -->
+                    <div class="priority-card">
+                        <div class="priority-header">
+                            <div class="priority-icon p2-icon">P2</div>
+                            <h3>High Priority</h3>
+                        </div>
+                        <p class="priority-desc">Significant impacts requiring attention</p>
+                        <div class="threshold-input">
+                            <label>Min Threshold (g)</label>
+                            <input type="number" id="p2Min" value="10" step="0.1" min="0">
+                        </div>
+                        <div class="threshold-input">
+                            <label>Max Threshold (g)</label>
+                            <input type="number" id="p2Max" value="20" step="0.1" min="0">
+                        </div>
+                        <div class="threshold-range">
+                            Range: <span id="p2Range">10g - 20g</span>
+                        </div>
+                    </div>
+
+                    <!-- P3 Card -->
+                    <div class="priority-card">
+                        <div class="priority-header">
+                            <div class="priority-icon p3-icon">P3</div>
+                            <h3>Critical Priority</h3>
+                        </div>
+                        <p class="priority-desc">Severe impacts requiring immediate action</p>
+                        <div class="threshold-input">
+                            <label>Min Threshold (g)</label>
+                            <input type="number" id="p3Min" value="20" step="0.1" min="0">
+                        </div>
+                        <div class="threshold-input">
+                            <label>Max Threshold (g)</label>
+                            <input type="text" id="p3Max" value="∞" disabled>
+                        </div>
+                        <div class="threshold-range">
+                            Range: <span id="p3Range">20g +</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Peak Limits Section -->
+            <div class="peak-limits-section">
+                <div class="peak-limits-header">
+                    <h3><i class="fas fa-chart-line" style="color: #22c55e; margin-right: 8px;"></i>Peak Limit Values</h3>
+                    <span style="color: #64748b; font-size: 0.9rem;">Configure available peak limits for classification</span>
+                </div>
+
+                <div class="limits-container" id="limitsContainer">
+                    <!-- Populated by JavaScript -->
+                </div>
+
+                <div class="add-limit">
+                    <input type="number" id="newLimit" placeholder="Enter new peak limit (e.g., 15)" step="0.1" min="0">
+                    <button class="btn btn-secondary" onclick="addPeakLimit()">
+                        <i class="fas fa-plus"></i> Add Limit
+                    </button>
+                </div>
+            </div>
+
+            <!-- Validation Error -->
+            <div id="validationError" class="validation-error">
+                <i class="fas fa-exclamation-triangle"></i> <span></span>
+            </div>
+
+            <!-- Save Buttons -->
+            <div class="save-section">
+                <button class="btn btn-secondary" onclick="resetToDefault()">
+                    <i class="fas fa-undo"></i> Reset to Default
+                </button>
+                <button class="btn btn-primary" onclick="saveAllConfig()">
+                    <i class="fas fa-save"></i> Save Configuration
+                </button>
+            </div>
+
+            <!-- Success Message -->
+            <div id="successMessage" class="success-message">
+                <i class="fas fa-check-circle"></i> Configuration saved successfully! The analysis page will now use these values.
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/common.js"></script>
+    <script src="../js/pages/configuration.js"></script>
+</body>
+</html>
