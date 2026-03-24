@@ -16,8 +16,8 @@ import argparse
 from datetime import datetime, timedelta
 
 # Configuration
-# MQTT_HOST = "192.168.0.125"
-MQTT_HOST = "localhost"
+MQTT_HOST = "192.168.0.125"
+#MQTT_HOST = "localhost"
 MQTT_PORT = 1883
 MQTT_TOPIC_ACCL = "adj/datalogger/sensors/accelerometer"
 MQTT_TOPIC_GPS = "adj/datalogger/sensors/gps"

@@ -92,7 +92,7 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
 void vTCPSimpleTask(void *pvParam)
 {
     (void)pvParam;
-    uint8_t rx_buf[256];
+    uint8_t rx_buf[512];
     uint8_t connected = 0;
     
     usart_debug("[TCPSimpleTask] started\r\n");
@@ -131,17 +131,19 @@ void vTCPSimpleTask(void *pvParam)
                     connected = 1;
                 }
                 
-                
-                int len = W5500_Recv(0, rx_buf, sizeof(rx_buf) - 1);
-                
+                int len;
+                while(
+                 len = W5500_Recv(0, rx_buf, sizeof(rx_buf) > 0))
+                 {
+                    rx_buf[len] = '\0';
+                    usart_debug((char*)rx_buf);
+                 }
                 if (len > 0) {
                     rx_buf[len] = '\0';
                     usart_debug("\r\n[RECEIVED %d bytes]\r\n", len);
                     usart_debug("Data: %s\r\n", rx_buf);
-                    
-                    
-                    char *reply = "ACK from Junction Box\r\n";
-                    W5500_Send(0, (uint8_t*)reply, strlen(reply));
+                    // char *reply = "ACK from Junction Box\r\n";
+                    // W5500_Send(0, (uint8_t*)reply, strlen(reply));
                 }
                 break;
                 

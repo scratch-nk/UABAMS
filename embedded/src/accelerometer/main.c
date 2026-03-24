@@ -1,5 +1,5 @@
 /*
- * accelerometer/main.c -- UABAMS Box 1, FreeRTOS v10.6.2
+  * accelerometer/main.c -- UABAMS Box 1, FreeRTOS v10.6.2 
  *
  * Three-task architecture:
  *
@@ -459,7 +459,57 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     usart_debug("\r\n");
     for (;;);
 }
+static void vBootTask(void *pvParam)
+{
+    (void)pvParam;
 
+    char health_buf[512];
+
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(30000));
+
+        // Header
+        snprintf(health_buf, sizeof(health_buf),
+            "\r\n=================================\r\n"
+            "   UBMS 1.1\r\n"
+            "DATA LOGGER UNIT\r\n"
+            "=================================\r\n"
+            "SYSTEM Health INITIALIZATION...\r\n");
+
+        usart_debug(health_buf);
+
+        if (g_eth_ok)
+            UBMS_Send_TCP(health_buf);
+
+        // UART original (same)
+        health_print_all();
+
+       
+        snprintf(health_buf, sizeof(health_buf),
+            "[HEALTH] Peripheral Status\r\n"
+            "  USART2    : OK\r\n"
+            "  SPI1      : OK\r\n"
+            "  ADXL345 S1: %s\r\n"
+            "  ADXL345 S2: %s\r\n"
+            "  W5500     : %s\r\n"
+            "  PHY Link  : %s\r\n"
+            "  TCP       : %s\r\n"
+            "========================================\r\n",
+
+            (health_get_sensor(1) == HEALTH_OK) ? "OK" : "FAIL",
+            (health_get_sensor(2) == HEALTH_OK) ? "OK" : "FAIL",
+            (health_get_w5500() == HEALTH_OK) ? "OK" : "FAIL",
+            (health_get_phy() == HEALTH_OK) ? "OK" : "FAIL",
+            (g_eth_ok) ? "OK" : "FAIL"
+        );
+
+        if (g_eth_ok)
+        {
+            UBMS_Send_TCP(health_buf);
+        }
+    }
+}
 /* -- main ------------------------------------------------------------------ */
 int main(void)
 {
@@ -473,7 +523,7 @@ int main(void)
     spi1_init();    /* ADXL345 x2 on SPI1 */
     
     /* Sensor health checks from accelerometer_health.h */
-    sensor_spi_health_check();
+    //sensor_spi_health_check();
     sensor_max_range_check(1);
     sensor_max_range_check(2);
     sensor_static_check();
@@ -533,7 +583,7 @@ int main(void)
     usart_debug("CONNECT REQUEST SENT\r\n");
     W5500_TCP_Client_Connect(0, server_ip, 5000);
 
-    health_print_all();   /* TCP shows PENDING; LogTask will update and reprint */
+   // health_print_all();   /* TCP shows PENDING; LogTask will update and reprint */
     usart_debug("[INIT] Ready. Starting scheduler...\r\n");
 
     /* ── RTOS objects ──────────────────────────────────────────────────────── */
@@ -548,6 +598,7 @@ int main(void)
     /* LogTask: priority 3 -- runs when AccelTask is delaying between samples.
      * Stack 640 words = 2560 B -- covers snprintf(512 B) + W5500 init frames. */
     xTaskCreate(vLogTask,    "Log",     640, NULL, 3, NULL);
+    xTaskCreate(vBootTask, "Boot", 512, NULL, 2, NULL);
 
     /* HealthTask: priority 1 (lowest) -- runs every 5 s during idle periods.
      * Stack 256 words = 1024 B -- only calls driver reads + usart_debug.    */

@@ -21,3 +21,5 @@ desktop.ini
 *.key
 secrets.*
 config.local.*
+
+venv/
