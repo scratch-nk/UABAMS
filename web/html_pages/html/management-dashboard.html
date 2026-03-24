@@ -63,14 +63,14 @@
                         </svg>
                     </div>
                 </div>
-                <div class="kpi-value">98.7%</div>
+                <div class="kpi-value" id="kpi-uptime">—</div>
                 <div class="kpi-label">System Uptime</div>
                 <div class="kpi-change">
                     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
                         <polyline points="17 6 23 6 23 12"/>
                     </svg>
-                    <span>+2.3% from last month</span>
+                    <span id="kpi-uptime-sub">Loading...</span>
                 </div>
             </div>
 
@@ -84,14 +84,14 @@
                         </svg>
                     </div>
                 </div>
-                <div class="kpi-value">156</div>
+                <div class="kpi-value" id="kpi-sensors">—</div>
                 <div class="kpi-label">Active Sensors</div>
                 <div class="kpi-change">
                     <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
                         <polyline points="17 6 23 6 23 12"/>
                     </svg>
-                    <span>+4 new sensors</span>
+                    <span id="kpi-sensors-sub">Loading...</span>
                 </div>
             </div>
 
@@ -105,10 +105,10 @@
                         </svg>
                     </div>
                 </div>
-                <div class="kpi-value">3</div>
+                <div class="kpi-value" id="kpi-alerts">—</div>
                 <div class="kpi-label">Active Alerts</div>
                 <div class="kpi-change orange">
-                    <span>2 require attention</span>
+                    <span id="kpi-alerts-sub">Loading...</span>
                 </div>
             </div>
 
@@ -123,10 +123,10 @@
                         </svg>
                     </div>
                 </div>
-                <div class="kpi-value">47</div>
+                <div class="kpi-value" id="kpi-operators">2</div>
                 <div class="kpi-label">Total Operators</div>
                 <div class="kpi-change">
-                    <span>24 currently active</span>
+                    <span id="kpi-operators-sub">left &amp; right sensor</span>
                 </div>
             </div>
         </div>
@@ -166,21 +166,21 @@
                             <div class="health-dot" style="background-color: #22c55e;"></div>
                             <span class="health-name">Operational</span>
                         </div>
-                        <span class="health-value">142</span>
+                        <span class="health-value" id="health-operational">—</span>
                     </div>
                     <div class="health-item">
                         <div class="health-item-left">
                             <div class="health-dot" style="background-color: #eab308;"></div>
                             <span class="health-name">Warning</span>
                         </div>
-                        <span class="health-value">12</span>
+                        <span class="health-value" id="health-warning">—</span>
                     </div>
                     <div class="health-item">
                         <div class="health-item-left">
                             <div class="health-dot" style="background-color: #ef4444;"></div>
                             <span class="health-name">Critical</span>
                         </div>
-                        <span class="health-value">2</span>
+                        <span class="health-value" id="health-critical">—</span>
                     </div>
                 </div>
             </div>
