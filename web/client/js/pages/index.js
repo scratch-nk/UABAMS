@@ -3,7 +3,7 @@
    All sensor values driven by real Socket.IO data from hardware
 ============================================================================= */
 
-const SERVER_URL = 'http://192.168.0.125:5000';
+const SERVER_URL = window.location.origin;
 const ACCEL_STATES = ['not-connected', 'initialized', 'connected'];
 
 // ── Sensor state cache (left panel uses this) ─────────────────────────────
