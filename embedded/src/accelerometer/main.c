@@ -523,7 +523,6 @@ int main(void)
     spi1_init();    /* ADXL345 x2 on SPI1 */
     
     /* Sensor health checks from accelerometer_health.h */
-
     //sensor_spi_health_check();
     sensor_max_range_check(1);
     sensor_max_range_check(2);
