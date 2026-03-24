@@ -7,12 +7,17 @@
 Thumbs.db
 desktop.ini
 
+.gitignore
+
 # Editors
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+
+node_modules/
+
 
 # Secrets — catch-all, never let these through
 .env
@@ -22,10 +27,9 @@ desktop.ini
 secrets.*
 config.local.*
 
-client/node_modules/
-client/package-lock.json
-client/update_version.sh
-server/node_modules/
-server/package-lock.json
-server/peaks_log.json
+# the embedded binaries
+*.o
+*.elf
+*.bin
 
+data/

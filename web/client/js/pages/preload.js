@@ -4,7 +4,7 @@
    Populates all UI elements with historical data so the page is never blank
 ============================================================================= */
 
-const PRELOAD_SERVER = 'http://192.168.0.125:5000';
+const PRELOAD_SERVER = 'http://192.168.0.136:5000';
 
 // ── Safe DOM setter ───────────────────────────────────────────────────────
 function _set(id, val) {

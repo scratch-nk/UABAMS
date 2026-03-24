@@ -6,7 +6,7 @@
    Reset button: display-only reset, DB untouched
 ============================================================================= */
 
-const SERVER = 'http://192.168.0.125:5000';
+const SERVER = 'http://192.168.0.136:5000';
 
 let isLiveStreaming  = true;
 let debugMode        = false;
