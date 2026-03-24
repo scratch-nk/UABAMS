@@ -6,7 +6,7 @@
    Applied per sensor side → 4 channels: AB-L-VERT, AB-L-LAT, AB-R-VERT, AB-R-LAT
 ============================================================================= */
 
-const SERVER_URL = 'http://192.168.0.125:5000';
+const SERVER_URL = window.location.origin;
 
 // ── Timestamp ─────────────────────────────────────────────────────────────
 (function tickTimestamp() {
@@ -215,7 +215,7 @@ function scheduleRender() {
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────
 if (typeof io === 'undefined') {
-    console.error('[graphs] Socket.IO not loaded! Add this to graphs.html <head>:\n<script src="http://192.168.0.125:5000/socket.io/socket.io.js"><\/script>');
+    console.error('[graphs] Socket.IO not loaded! Add this to graphs.html <head>:\n<script src="/socket.io/socket.io.js"><\/script>');
 }
 
 const socket = (typeof io !== 'undefined') ? io(SERVER_URL, {

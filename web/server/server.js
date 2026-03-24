@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express   = require('express');
 const http      = require('http');
 const socketIo  = require('socket.io');
@@ -40,7 +41,8 @@ let peaksLog = loadPeaksLog();
 console.log(`Loaded ${peaksLog.length} existing impact records from JSON fallback`);
 
 // ── Express / Socket.IO ───────────────────────────────────────────────────
-const nano   = require('nano')('http://admin:ogdenmash@127.0.0.1:5984');
+const COUCHDB_URL = `http://${process.env.COUCHDB_USER}:${process.env.COUCHDB_PASS}@${process.env.COUCHDB_HOST}:${process.env.COUCHDB_PORT}`;
+const nano   = require('nano')(COUCHDB_URL);
 const app    = express();
 const server = http.createServer(app);
 const io     = socketIo(server, { cors: { origin: '*', methods: ['GET', 'POST'] } });
@@ -97,8 +99,7 @@ initCouchDB();
 // ── MQTT ──────────────────────────────────────────────────────────────────
 let lastDataTimestamp = null;
 let mqttConnected     = false;
-// const mqttClient      = mqtt.connect('mqtt://localhost:1883');
-const mqttClient = mqtt.connect(`mqtt://localhost:1883`);
+const mqttClient = mqtt.connect(`mqtt://${process.env.MQTT_HOST}:${process.env.MQTT_PORT}`);
 
 // ── Health parser ─────────────────────────────────────────────────────────
 // TODO: Details of peripherals to be fetched from controller encoded in msg.
@@ -456,7 +457,7 @@ mqttClient.on('error', err => { console.error('MQTT error:', err.message); mqttC
 mqttClient.on('close', ()  => { console.warn('MQTT closed'); mqttConnected = false; });
 
 mqttClient.on('connect', () => {
-    console.log('MQTT Connected to localhost:1883');
+    console.log(`MQTT Connected to ${process.env.MQTT_HOST}:${process.env.MQTT_PORT}`);
     mqttConnected = true;
     [
         'adj/datalogger/sensors/left',
@@ -597,7 +598,7 @@ mqttClient.on('message', async (topic, message) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Local IP: ${LOCAL_IP}`);
