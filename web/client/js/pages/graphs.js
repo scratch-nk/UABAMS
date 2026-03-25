@@ -311,6 +311,8 @@ socket.on('accelerometer-data', data => {
     document.getElementById(pfx + 'X').textContent = x.toFixed(4) + ' g';
     document.getElementById(pfx + 'Y').textContent = y.toFixed(4) + ' g';
     document.getElementById(pfx + 'Z').textContent = z.toFixed(4) + ' g';
+    const now = new Date();
+    document.getElementById(pfx + 'RefreshTime').textContent = '🕐 ' + now.toLocaleTimeString('en-GB', {hour12:false}) + '  ' + now.toLocaleDateString('en-GB');
 
     // ── Distance chart: left sensor drives label + distance advance ───────
     if (side === 'left') {
@@ -373,3 +375,42 @@ socket.on('thresholds-updated', (t) => {
     graphThresholds = t;
     console.log('[graphs] Thresholds updated live:', t);
 });
+
+// ── Raw charts DB poll (every 3s, no Socket.IO) ───────────────────────────
+// lv = left-vertical (Z), ll = left-lateral (X), rv = right-vertical (Z), rl = right-lateral (X)
+async function fetchRawFromDB() {
+    try {
+        const data = await fetch(`${SERVER_URL}/api/acceleration/channels?minutes=60`).then(r => r.json());
+        if (!data.length) return;
+
+        // Use last 60 points to fill the rolling subplot charts
+        const slice = data.slice(-60);
+        slice.forEach(pt => {
+            if (pt.lv != null) { pushSubplot(subplots.s1.z, pt.lv); }
+            if (pt.ll != null) { pushSubplot(subplots.s1.x, pt.ll); }
+            if (pt.rv != null) { pushSubplot(subplots.s2.z, pt.rv); }
+            if (pt.rl != null) { pushSubplot(subplots.s2.x, pt.rl); }
+        });
+
+        // Latest values for the readout labels
+        const latest = data[data.length - 1];
+        const now    = new Date();
+        const ts     = '🕐 ' + now.toLocaleTimeString('en-GB', {hour12:false}) + '  ' + now.toLocaleDateString('en-GB');
+
+        if (latest.lv != null || latest.ll != null) {
+            document.getElementById('raw1X').textContent = (latest.ll ?? 0).toFixed(4) + ' g';
+            document.getElementById('raw1Y').textContent = '0.0000 g';
+            document.getElementById('raw1Z').textContent = (latest.lv ?? 0).toFixed(4) + ' g';
+            document.getElementById('raw1RefreshTime').textContent = ts;
+        }
+        if (latest.rv != null || latest.rl != null) {
+            document.getElementById('raw2X').textContent = (latest.rl ?? 0).toFixed(4) + ' g';
+            document.getElementById('raw2Y').textContent = '0.0000 g';
+            document.getElementById('raw2Z').textContent = (latest.rv ?? 0).toFixed(4) + ' g';
+            document.getElementById('raw2RefreshTime').textContent = ts;
+        }
+    } catch (e) { console.error('[raw-db]', e); }
+}
+
+fetchRawFromDB();
+setInterval(fetchRawFromDB, 3000);
