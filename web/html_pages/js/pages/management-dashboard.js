@@ -241,3 +241,4 @@ setInterval(() => {
     fetchActiveAlerts();
     fetchSystemHealth();
 }, 1000);                             // KPIs: every 1S
+
