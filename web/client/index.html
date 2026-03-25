@@ -55,22 +55,29 @@
             </div>
         </nav>
         <div class="header-right">
-            <!--
-            <div class="accel-status-group">
-                <div class="accel-card" id="accel1Card">
-                    <span class="accel-card-label">Accel 1</span>
-                    <div class="state-pill not-connected active" id="accel1-not-connected"><i class="fas fa-circle"></i> Not Connected</div>
-                    <div class="state-pill initialized" id="accel1-initialized"><i class="fas fa-circle"></i> Initialized</div>
-                    <div class="state-pill connected" id="accel1-connected"><i class="fas fa-circle"></i> Connected</div>
-                </div>
-                <div class="accel-card" id="accel2Card">
-                    <span class="accel-card-label">Accel 2</span>
-                    <div class="state-pill not-connected active" id="accel2-not-connected"><i class="fas fa-circle"></i> Not Connected</div>
-                    <div class="state-pill initialized" id="accel2-initialized"><i class="fas fa-circle"></i> Initialized</div>
-                    <div class="state-pill connected" id="accel2-connected"><i class="fas fa-circle"></i> Connected</div>
+            <div class="mqtt-status" id="mqttStatus">
+                <span class="mqtt-dot"></span>
+                <span class="mqtt-text" id="mqttText">LIVE</span>
+            </div>
+            <div class="history-control" id="historyControl">
+                <button class="history-btn" id="historyBtn">
+                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="flex-shrink:0">
+                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <span id="historyBtnLabel">History</span>
+                </button>
+                <div class="history-dropdown" id="historyDropdown">
+                    <div class="history-row">
+                        <label>From<input type="datetime-local" id="rangeFrom"></label>
+                        <label>To<input type="datetime-local" id="rangeTo"></label>
+                    </div>
+                    <div class="history-row history-actions">
+                        <button class="history-apply" id="applyRange">Apply</button>
+                        <button class="history-live"  id="goLive">Go Live</button>
+                    </div>
                 </div>
             </div>
-            -->
+
             <div class="time-display" id="currentTime"></div>
             <div class="user-profile"><i class="fas fa-user-circle"></i></div>
         </div>
@@ -144,6 +151,7 @@
     </div>
 
     <script src="js/common.js"></script>
+    <script src="js/mqtt_status.js"></script>
     <script src="js/pages/preload.js"></script>
     <script src="js/pages/index.js"></script>
 </body>

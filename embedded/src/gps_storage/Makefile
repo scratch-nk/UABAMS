@@ -1,118 +1,122 @@
-PROJECT_ROOT := ../..
+PROJECT_ROOT  := ../..
 FREERTOS_ROOT := $(PROJECT_ROOT)/src/freertos
-FREERTOS_OBJDIR := freertos_obj
 
-# Clock 
+# Clock
+# 96: PLL on HSI — full performance, correct USB clock (48 MHz)
+# 16: HSI direct — no PLL. Override: make -C src/gps_storage CPU_CLOCK_MHZ=16
 CPU_CLOCK_MHZ ?= 96
 
-#  Compiler Flags
-CC = arm-none-eabi-gcc
-OBJCOPY = arm-none-eabi-objcopy
-CFLAGS = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -O0 -g -Wall
-CFLAGS += -ffreestanding -DSTM32F411xE -u _printf_float
-CFLAGS += -DCPU_CLOCK_MHZ=$(CPU_CLOCK_MHZ)
-
-# Common LDFLAGS
-LDFLAGS_COMMON = -nostdlib -lc -lm -lgcc -lnosys
 LDFLAGS = -T $(PROJECT_ROOT)/lib/linker.ld $(LDFLAGS_COMMON)
 
-# Include paths
-INCLUDES = -I$(PROJECT_ROOT)/include/cmsis/Include
-INCLUDES += -I$(PROJECT_ROOT)/include
-INCLUDES += -I$(PROJECT_ROOT)/include/freertos
-INCLUDES += -I$(FREERTOS_ROOT)/portable/GCC/ARM_CM4F
-INCLUDES += -I$(PROJECT_ROOT)/src/common
+INCLUDES = \
+    -I$(PROJECT_ROOT)/include/cmsis/Include \
+    -I$(PROJECT_ROOT)/include \
+    -I$(PROJECT_ROOT)/include/freertos \
+    -I$(PROJECT_ROOT)/src/freertos/portable/GCC/ARM_CM4F \
+    -I$(PROJECT_ROOT)/src/common
 
-# Source files (local)
+# Inherit CFLAGS from root Makefile (includes FPU flags); add clock define.
+CFLAGS_LOCAL = $(CFLAGS) -DCPU_CLOCK_MHZ=$(CPU_CLOCK_MHZ)
+
+# ── Project sources ────────────────────────────────────────────────────────────
 SRC = \
- spi.c \
- gps.c \
- sd.c \
- gps_health.c \
- main.c
+    spi.c \
+    gps.c \
+    sd.c \
+    gps_health.c \
+    main.c
 
-# Object directories
-OBJDIR = obj
-COMMON_OBJ_DIR = $(PROJECT_ROOT)/src/common/obj
+# ── Local common sources (not in COMMON_OBJ) ──────────────────────────────────
+# clock_config.c  — PLL setup (needed for 96 MHz, compiled for both speeds)
+# led_debug.c     — PWM LED, used for status indication
+LOCAL_CSRC = \
+    $(PROJECT_ROOT)/src/common/led_debug.c
+    # $(PROJECT_ROOT)/src/common/clock_config.c \ -- gps_storage uses SysTick_Config instead.
 
-# Common objects (all .o files from common directory)
-COMMON_OBJ = $(wildcard $(COMMON_OBJ_DIR)/*.o)
+OBJDIR          = obj
+FREERTOS_OBJDIR = freertos_obj
+COMMON_OBJ      = $(wildcard ../common/obj/*.o)
+OBJ             = $(addprefix $(OBJDIR)/,$(SRC:.c=.o))
+LOCAL_OBJ       = $(patsubst %.c,$(OBJDIR)/%.o,$(notdir $(LOCAL_CSRC)))
 
-# Local objects
-OBJ = $(addprefix $(OBJDIR)/,$(SRC:.c=.o))
-
-# delay.c compiled locally
+# delay.c compiled with FreeRTOS SysTick guard:
+#   suppresses delay.c's SysTick_Handler so the combined handler in main.c
+#   can own it (calls ms_ticks++ then xPortSysTickHandler()).
 DELAY_OBJ = $(OBJDIR)/delay.o
 
-# FreeRTOS objects
+# ── FreeRTOS kernel objects ────────────────────────────────────────────────────
+# Placed in a separate dir to avoid basename collisions with project objects.
 FREERTOS_OBJ = \
- $(FREERTOS_OBJDIR)/tasks.o \
- $(FREERTOS_OBJDIR)/queue.o \
- $(FREERTOS_OBJDIR)/list.o \
- $(FREERTOS_OBJDIR)/timers.o \
- $(FREERTOS_OBJDIR)/stream_buffer.o \
- $(FREERTOS_OBJDIR)/port.o \
- $(FREERTOS_OBJDIR)/heap_4.o
+    $(FREERTOS_OBJDIR)/tasks.o \
+    $(FREERTOS_OBJDIR)/queue.o \
+    $(FREERTOS_OBJDIR)/list.o \
+    $(FREERTOS_OBJDIR)/timers.o \
+    $(FREERTOS_OBJDIR)/stream_buffer.o \
+    $(FREERTOS_OBJDIR)/port.o \
+    $(FREERTOS_OBJDIR)/heap_4.o
 
 TARGET = firmware.elf
 BIN    = firmware.bin
 
-# Default target
-all: $(TARGET) $(BIN)
+# ── Build rules ────────────────────────────────────────────────────────────────
+all: $(FREERTOS_OBJDIR) $(OBJDIR) $(TARGET) $(BIN)
 
-# Create directories
 $(OBJDIR) $(FREERTOS_OBJDIR):
 	mkdir -p $@
 
-# Compile local source files
+# Project C objects
 $(OBJDIR)/%.o: %.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
-# Compile delay.c from common directory
+# Local common objects (clock_config, led_debug) — explicit rules needed
+# because they live outside the current directory
+$(OBJDIR)/clock_config.o: $(PROJECT_ROOT)/src/common/clock_config.c | $(OBJDIR)
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/led_debug.o: $(PROJECT_ROOT)/src/common/led_debug.c | $(OBJDIR)
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
+
+# delay.c — compiled with USE_FREERTOS_SYSTICK to suppress its SysTick_Handler
 $(DELAY_OBJ): $(PROJECT_ROOT)/src/common/delay.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -DUSE_FREERTOS_SYSTICK -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -DUSE_FREERTOS_SYSTICK -c $< -o $@
 
-# Compile w5500.c from common directory (if needed locally)
-$(OBJDIR)/w5500.o: $(PROJECT_ROOT)/src/common/w5500.c | $(OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
-
-# ── FreeRTOS kernel rules
+# ── FreeRTOS kernel — explicit rules (basenames not unique across directories) ─
 $(FREERTOS_OBJDIR)/tasks.o: $(FREERTOS_ROOT)/tasks.c | $(FREERTOS_OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(FREERTOS_OBJDIR)/queue.o: $(FREERTOS_ROOT)/queue.c | $(FREERTOS_OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(FREERTOS_OBJDIR)/list.o: $(FREERTOS_ROOT)/list.c | $(FREERTOS_OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(FREERTOS_OBJDIR)/timers.o: $(FREERTOS_ROOT)/timers.c | $(FREERTOS_OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(FREERTOS_OBJDIR)/stream_buffer.o: $(FREERTOS_ROOT)/stream_buffer.c | $(FREERTOS_OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(FREERTOS_OBJDIR)/port.o: $(FREERTOS_ROOT)/portable/GCC/ARM_CM4F/port.c | $(FREERTOS_OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(FREERTOS_OBJDIR)/heap_4.o: $(FREERTOS_ROOT)/portable/MemMang/heap_4.c | $(FREERTOS_OBJDIR)
-	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
-# Link target - include all objects
-$(TARGET): $(OBJ) $(DELAY_OBJ) $(FREERTOS_OBJ) $(COMMON_OBJ)
-	$(CC) $(CFLAGS) $^ $(LDFLAGS) -o $@
+# ── Link ───────────────────────────────────────────────────────────────────────
+$(TARGET): $(OBJ) $(LOCAL_OBJ) $(DELAY_OBJ) $(FREERTOS_OBJ)
+	$(CC) $(CFLAGS_LOCAL) $^ $(COMMON_OBJ) $(LDFLAGS) -lm -lgcc -lnosys -o $@
 
-# Generate binary
 $(BIN): $(TARGET)
 	$(OBJCOPY) -O binary $< $@
+	@echo ""
+	@echo "=== GPS Storage (FreeRTOS) build OK: $(BIN) ==="
+	@echo "    Flash with: make -C embedded/src/gps_storage flash"
 
-# Flash target
 flash:
 	openocd -f board/st_nucleo_f4.cfg \
 	        -c "program $(TARGET) verify reset exit"
 
-# Clean
 clean:
 	rm -rf $(OBJDIR) $(FREERTOS_OBJDIR) *.elf *.bin
 
-.PHONY: all clean flash
+.PHONY: all flash clean

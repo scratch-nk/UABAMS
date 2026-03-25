@@ -1,0 +1,10 @@
+build/
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.d
+CMakeFiles/
+CMakeCache.txt
+node_modules/
