@@ -1,4 +1,7 @@
-/* acceleration-analysis.js — SIMPLE & WORKING VERSION */
+/* acceleration-analysis.js — SIMPLE & WORKING VERSION
+ * 
+ * Last modified: Wed Mar 25 09:47:14 PM IST 2026
+ * */
 
 const SERVER = window.location.origin;
 

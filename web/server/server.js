@@ -32,6 +32,8 @@ function loadPeaksLog() {
     } catch (e) { console.error('peaks_log.json read error:', e.message); }
     return [];
 }
+
+
 function savePeaksLog(log) {
     try { fs.writeFileSync(PEAKS_LOG_FILE, JSON.stringify(log, null, 2)); }
     catch (e) { console.error('peaks_log.json write error:', e.message); }
@@ -79,6 +81,7 @@ const initCouchDB = async () => {
             try { await nano.db.get(name); }
             catch (e) { await nano.db.create(name); console.log(`Created ${name}`); }
         }
+
         accelerometerEventsDB = nano.use('accelerometer_events');
         monitoringDataDB      = nano.use('monitoring_data');
         realtimeDataDB        = nano.use('realtime_data');
