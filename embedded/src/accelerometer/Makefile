@@ -1,7 +1,7 @@
 PROJECT_ROOT  := ../..
 FREERTOS_ROOT := $(PROJECT_ROOT)/src/freertos
 
-# ── Clock ─────────────────────────────────────────────────────────────────────
+# Clock
 # 96: PLL on HSI — full performance, correct USB clock (48 MHz)
 # 16: HSI direct — no PLL. Override: make -C src/accelerometer CPU_CLOCK_MHZ=16
 CPU_CLOCK_MHZ ?= 96
