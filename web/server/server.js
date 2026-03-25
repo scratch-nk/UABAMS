@@ -32,6 +32,8 @@ function loadPeaksLog() {
     } catch (e) { console.error('peaks_log.json read error:', e.message); }
     return [];
 }
+
+
 function savePeaksLog(log) {
     try { fs.writeFileSync(PEAKS_LOG_FILE, JSON.stringify(log, null, 2)); }
     catch (e) { console.error('peaks_log.json write error:', e.message); }
@@ -79,6 +81,7 @@ const initCouchDB = async () => {
             try { await nano.db.get(name); }
             catch (e) { await nano.db.create(name); console.log(`Created ${name}`); }
         }
+
         accelerometerEventsDB = nano.use('accelerometer_events');
         monitoringDataDB      = nano.use('monitoring_data');
         realtimeDataDB        = nano.use('realtime_data');
@@ -422,6 +425,54 @@ app.get('/api/realtime/status', (req, res) => {
         time_since_last:    lastDataTimestamp ? Math.floor((Date.now() - lastDataTimestamp) / 1000) : null
     });
 });
+
+// GET /api/realtime/impacts
+// Returns recent real-time data directly from the realtime_data database
+app.get('/api/realtime/impacts', async (req, res) => {
+    try {
+        const minutes = parseInt(req.query.minutes) || 1;
+        const cutoffTime = new Date(Date.now() - minutes * 60000).toISOString();
+        
+        if (realtimeDataDB) {
+            const response = await realtimeDataDB.find({
+                selector: { timestamp: { $gte: cutoffTime } },
+                sort: [{ timestamp: 'desc' }],
+                limit: 500
+            });
+            
+            const impacts = response.docs.map(doc => ({
+                timestamp: doc.timestamp,
+                sensor: doc.sensor,
+                peak_g: doc.peak || doc.gForce || 0,
+                peak: doc.peak,
+                gForce: doc.gForce || 0,
+                x: doc.x || 0,
+                y: doc.y || 0,
+                z: doc.z || 0,
+                rmsV: doc.rmsV,
+                rmsL: doc.rmsL,
+                sdV: doc.sdV,
+                sdL: doc.sdL,
+                p2pV: doc.p2pV,
+                p2pL: doc.p2pL,
+                distance_m: doc.distance_m || totalDistanceM || 0,
+                source: 'realtime'
+            }));
+            
+            console.log('[/api/realtime/impacts] Returned', impacts.length, 'readings');
+            return res.json(impacts);
+        }
+        
+        res.json([]);
+    } catch (e) {
+        console.error('[/api/realtime/impacts] Error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// GET /api/monitoring/peaks
+// Returns monitoring_data docs with peak/gForce above a threshold (default 5g)
+// (removed monitoring peaks endpoint — restored to previous server state)
 
 // ── Management Dashboard APIs ─────────────────────────────────────────────
 
