@@ -22,12 +22,12 @@ CFLAGS_LOCAL = $(CFLAGS) -DCPU_CLOCK_MHZ=$(CPU_CLOCK_MHZ)
 SRC = \
     main.c \
     health.c \
-    accelerometer_health.c \
+	accelerometer_health.c \
     i2c.c \
     spi.c \
     gps.c \
     adxl345.c
-
+	
 # ── Local common sources (not in COMMON_OBJ) ──────────────────────────────────
 # clock_config.c  — PLL setup (needed for 96 MHz, compiled for both speeds)
 # led_debug.c     — PWM LED, used for status indication
