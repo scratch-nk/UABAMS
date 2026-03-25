@@ -11,7 +11,13 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Impact Events</h1>
+            <div class="header-left">
+                <h1>Impact Events</h1>
+                <div class="live-row">
+                    <span id="liveDot" class="live-dot"></span>
+                    <span id="connStatus" class="conn-status conn-off">Connecting…</span>
+                </div>
+            </div>
             <div class="filters">
                 <select id="severityFilter">
                     <option value="all">All Severities</option>
@@ -28,23 +34,23 @@
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="label">Total Events</div>
-                <div class="value" id="totalEvents">156</div>
+                <div class="value" id="totalEvents">—</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-high">
                 <div class="label">High Severity</div>
-                <div class="value" id="highEvents">23</div>
+                <div class="value" id="highEvents">—</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-medium">
                 <div class="label">Medium Severity</div>
-                <div class="value" id="mediumEvents">45</div>
+                <div class="value" id="mediumEvents">—</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card stat-low">
                 <div class="label">Low Severity</div>
-                <div class="value" id="lowEvents">88</div>
+                <div class="value" id="lowEvents">—</div>
             </div>
         </div>
 
-        <div id="eventsList"></div>
+        <div id="eventsList"><p class="empty">Loading events…</p></div>
     </div>
 
     <script src="../js/common.js"></script>

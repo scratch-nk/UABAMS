@@ -1,17 +1,46 @@
-/* events.css — Impact Events page */
+/* events.css — Realtime Impact Events page */
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f8fafc;
+    background: #f1f5f9;
     padding: 24px;
 }
 
 .container { max-width: 1400px; margin: 0 auto; }
 
-.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-.header h1 { font-size: 2rem; color: #1e293b; }
+/* ── Header ────────────────────────────────────────────────────────────── */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+}
 
-.filters { display: flex; gap: 12px; }
+.header-left h1 { font-size: 1.8rem; color: #1e293b; margin: 0 0 4px; }
+
+.live-row { display: flex; align-items: center; gap: 8px; }
+
+.live-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 0 rgba(34,197,94,0.5);
+    transition: box-shadow 0.1s;
+}
+.live-dot.pulse {
+    box-shadow: 0 0 0 8px rgba(34,197,94,0);
+    animation: ping 0.6s ease-out;
+}
+@keyframes ping {
+    0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+    100% { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
+}
+
+.conn-status { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; }
+.conn-on  { color: #16a34a; }
+.conn-off { color: #94a3b8; }
+
+.filters { display: flex; gap: 12px; align-items: center; }
 
 .filters select,
 .filters button {
@@ -19,6 +48,7 @@ body {
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     background: white;
+    font-size: 0.9rem;
     cursor: pointer;
 }
 
@@ -29,60 +59,107 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+    font-weight: 600;
 }
+.filters button:hover { background: #16a34a; }
 
-/* Stats grid */
+/* ── Stats grid ────────────────────────────────────────────────────────── */
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
+    gap: 16px;
     margin-bottom: 24px;
 }
 
 .stat-card {
     background: white;
-    padding: 20px;
+    padding: 20px 24px;
     border-radius: 12px;
     border: 1px solid #e2e8f0;
+    border-top: 4px solid #cbd5e1;
 }
+.stat-high   { border-top-color: #ef4444; }
+.stat-medium { border-top-color: #f59e0b; }
+.stat-low    { border-top-color: #22c55e; }
 
-.stat-card .label { color: #64748b; font-size: 0.9rem; }
+.stat-card .label { color: #64748b; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat-card .value { font-size: 2.2rem; font-weight: 700; color: #1e293b; margin-top: 4px; }
 
-.stat-card .value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #1e293b;
-    margin-top: 4px;
-}
-
-/* Event cards */
+/* ── Event cards ───────────────────────────────────────────────────────── */
 .event-card {
     background: white;
     border: 1px solid #e2e8f0;
+    border-left: 5px solid #cbd5e1;
     border-radius: 10px;
-    padding: 16px;
-    margin-bottom: 12px;
+    padding: 14px 20px;
+    margin-bottom: 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-left: 4px solid;
+    transition: box-shadow 0.2s;
 }
+.event-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.07); }
 
 .event-high   { border-left-color: #ef4444; }
 .event-medium { border-left-color: #f59e0b; }
 .event-low    { border-left-color: #22c55e; }
 
-.event-info { display: flex; gap: 24px; align-items: center; }
+/* flash animation for new incoming events */
+@keyframes flashIn {
+    0%   { background: #fef9c3; }
+    100% { background: white; }
+}
+.event-flash { animation: flashIn 3s ease-out forwards; }
 
-.event-time     { font-weight: 500; color: #1e293b; }
-.event-location { color: #64748b; }
+.event-left { display: flex; flex-direction: column; gap: 6px; }
 
-.event-peak {
-    font-weight: 600;
-    padding: 4px 12px;
-    border-radius: 30px;
+.event-top-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.event-bottom-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+
+.event-time   { font-weight: 600; color: #1e293b; font-size: 0.95rem; }
+.event-sensor {
+    font-size: 0.75rem; font-weight: 600;
+    background: #f1f5f9; color: #475569;
+    padding: 2px 8px; border-radius: 20px;
+    text-transform: capitalize;
+}
+.event-location { color: #64748b; font-size: 0.88rem; }
+.event-location i { margin-right: 4px; color: #94a3b8; }
+.event-meta { color: #94a3b8; font-size: 0.8rem; }
+
+.new-tag {
+    font-size: 0.68rem; font-weight: 700;
+    background: #fbbf24; color: #fff;
+    padding: 2px 7px; border-radius: 20px;
+    letter-spacing: 0.05em;
+    animation: fadeTag 3s forwards;
+}
+@keyframes fadeTag { 0%{opacity:1} 80%{opacity:1} 100%{opacity:0} }
+
+.pclass-badge {
+    font-size: 0.72rem; font-weight: 700;
+    color: white;
+    padding: 2px 8px; border-radius: 20px;
 }
 
+.event-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+
+.event-peak {
+    font-weight: 700;
+    font-size: 1.15rem;
+    padding: 4px 14px;
+    border-radius: 30px;
+}
 .peak-high   { background: #fee2e2; color: #b91c1c; }
 .peak-medium { background: #fef3c7; color: #92400e; }
 .peak-low    { background: #dcfce7; color: #166534; }
+
+.sev-label {
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.08em;
+}
+.sev-high   { color: #ef4444; }
+.sev-medium { color: #f59e0b; }
+.sev-low    { color: #22c55e; }
+
+.empty { color: #94a3b8; text-align: center; padding: 48px 0; font-size: 1rem; }
