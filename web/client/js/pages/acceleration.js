@@ -5,15 +5,6 @@ const CHART_POINTS = 120; // seconds visible on chart
 const STALE_MS     = 10000; // sensor offline if no data for 10s
 let   pollMinutes  = 2;    // window sent to API (matches time range btn)
 
-// ── Clock ──────────────────────────────────────────────────────────────────
-function updateTimestamp() {
-    const now = new Date();
-    document.getElementById('currentTimestamp').textContent =
-        now.toLocaleTimeString() + ' ' + now.toLocaleDateString();
-}
-setInterval(updateTimestamp, 1000);
-updateTimestamp();
-
 // ── Chart setup ───────────────────────────────────────────────────────────
 const channels = [
     { key: 'lv', name: 'AB-L-VERT', color: '#22c55e', legendId: 'legend1', metricId: 'metric1' },
