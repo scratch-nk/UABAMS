@@ -14,16 +14,6 @@ const _histFrom  = _gp.get('from');
 const _histTo    = _gp.get('to');
 const IS_HISTORICAL = !!(_histFrom && _histTo);
 
-// ── Timestamp ─────────────────────────────────────────────────────────────
-(function tickTimestamp() {
-    const el = document.getElementById('currentTimestamp');
-    if (el) {
-        const n = new Date();
-        el.textContent = n.toLocaleTimeString() + ' ' + n.toLocaleDateString();
-    }
-    if (!IS_HISTORICAL) setTimeout(tickTimestamp, 1000);
-})();
-
 // ── Channel derivation ────────────────────────────────────────────────────
 function getVert(x, y, z) { return Math.abs(z); }
 function getLat (x, y, z) { return Math.sqrt(x * x + y * y); }
