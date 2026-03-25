@@ -2,8 +2,24 @@
 
 const API = window.location.origin;
 
-// Clock — uses startClock from common.js
-startClock('currentTime', 'currentDate', 'long');
+// ── Historical mode detection ─────────────────────────────────────────────
+const _mp        = new URLSearchParams(location.search);
+const _histFrom  = _mp.get('from');
+const _histTo    = _mp.get('to');
+const IS_HISTORICAL = !!(_histFrom && _histTo);
+
+// Respond to mode changes from shell
+window.addEventListener('message', (e) => {
+    if (!e.data) return;
+    if (e.data.mode === 'historical' || e.data.mode === 'live') {
+        location.href = e.data.mode === 'historical'
+            ? `${location.pathname}?from=${e.data.from}&to=${e.data.to}`
+            : location.pathname;
+    }
+});
+
+// Clock — uses startClock from common.js (skip in historical mode)
+if (!IS_HISTORICAL) startClock('currentTime', 'currentDate', 'long');
 
 // ── Chart config ───────────────────────────────────────────────────────────
 const CHART_POINTS = 120; // how many seconds to show
@@ -153,7 +169,8 @@ function timeAgo(isoStr) {
 
 async function fetchUptime() {
     try {
-        const data = await fetch(`${API}/api/management/uptime`).then(r => r.json());
+        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
+        const data = await fetch(`${API}/api/management/uptime${qs}`).then(r => r.json());
         document.getElementById('kpi-uptime').textContent = data.uptime_pct + '%';
         if (data.window_hours === 0) {
             document.getElementById('kpi-uptime-sub').textContent = 'No data yet';
@@ -169,7 +186,8 @@ async function fetchUptime() {
 
 async function fetchActiveSensors() {
     try {
-        const data = await fetch(`${API}/api/management/active-sensors`).then(r => r.json());
+        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
+        const data = await fetch(`${API}/api/management/active-sensors${qs}`).then(r => r.json());
         document.getElementById('kpi-sensors').textContent = data.count;
         if (data.online.length > 0) {
             const offline = data.last_known.length ? ` · ${data.last_known.join(',')} offline` : '';
@@ -187,7 +205,8 @@ async function fetchActiveSensors() {
 
 async function fetchActiveAlerts() {
     try {
-        const data = await fetch(`${API}/api/management/active-alerts`).then(r => r.json());
+        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
+        const data = await fetch(`${API}/api/management/active-alerts${qs}`).then(r => r.json());
         document.getElementById('kpi-alerts').textContent     = data.total;
         document.getElementById('kpi-alerts-sub').textContent = `${data.require_attention} require attention`;
     } catch (e) { console.error('active-alerts fetch error:', e); }
@@ -195,7 +214,8 @@ async function fetchActiveAlerts() {
 
 async function fetchSystemHealth() {
     try {
-        const data = await fetch(`${API}/api/management/system-health`).then(r => r.json());
+        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
+        const data = await fetch(`${API}/api/management/system-health${qs}`).then(r => r.json());
         healthChart.data.datasets[0].data = [data.operational, data.warning, data.critical];
         healthChart.update();
         document.getElementById('health-operational').textContent = data.operational;
@@ -213,7 +233,10 @@ const STALE_CUTOFF_MS  = 15 * 1000;      // sensor considered offline after 15s
 
 async function fetchChartFromDB() {
     try {
-        const data = await fetch(`${API}/api/management/sensor-chart-recent`).then(r => r.json());
+        const url = IS_HISTORICAL
+            ? `${API}/api/management/sensor-chart?from=${_histFrom}&to=${_histTo}`
+            : `${API}/api/management/sensor-chart-recent`;
+        const data = await fetch(url).then(r => r.json());
 
         const now       = Date.now();
         const windowCut = new Date(now - CHART_WINDOW_MS).toISOString().slice(0, 19);
@@ -265,16 +288,26 @@ fetchActiveSensors();
 fetchActiveAlerts();
 fetchSystemHealth();
 
-// ── Poll everything from DB every 3s ─────────────────────────────────────
-setInterval(() => {
-    fetchChartFromDB();
-    fetchActiveSensors();
-    fetchSystemHealth();
-}, 3000);
+// ── Live polling (skipped in historical mode) ─────────────────────────────
+if (!IS_HISTORICAL) {
+    setInterval(() => {
+        fetchChartFromDB();
+        fetchActiveSensors();
+        fetchSystemHealth();
+    }, 3000);
 
+<<<<<<< HEAD
 // Uptime and alerts are slower-moving — poll every 15s
 setInterval(() => {
     fetchUptime();
     fetchActiveAlerts();
 }, 15000);
 >>>>>>> b1292cff834e8906680761efd9d62460fff7bfa4
+=======
+    // Uptime and alerts are slower-moving — poll every 15s
+    setInterval(() => {
+        fetchUptime();
+        fetchActiveAlerts();
+    }, 15000);
+}
+>>>>>>> e5b560a39d5585306027608bc086b43436fa8e3f
