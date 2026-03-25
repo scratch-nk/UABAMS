@@ -44,7 +44,7 @@
                 <div class="stat-icon"><i class="fas fa-chart-bar"></i></div>
                 <div class="stat-info">
                     <span class="stat-label">Data Points</span>
-                    <span class="stat-value">1,024</span>
+                    <span class="stat-value" id="dataPoints">—</span>
                 </div>
             </div>
             <div class="stat-item">
@@ -64,10 +64,10 @@
                     Combined Waveform - All Channels
                 </h2>
                 <div class="graph-controls">
-                    <button class="graph-btn active" onclick="setTimeRange('1h')">1H</button>
-                    <button class="graph-btn" onclick="setTimeRange('6h')">6H</button>
-                    <button class="graph-btn" onclick="setTimeRange('24h')">24H</button>
-                    <button class="graph-btn" onclick="setTimeRange('7d')">7D</button>
+                    <button class="graph-btn active" onclick="setTimeRange('2m',this)">2M</button>
+                    <button class="graph-btn" onclick="setTimeRange('1h',this)">1H</button>
+                    <button class="graph-btn" onclick="setTimeRange('6h',this)">6H</button>
+                    <button class="graph-btn" onclick="setTimeRange('24h',this)">24H</button>
                 </div>
             </div>
             <div class="main-chart">

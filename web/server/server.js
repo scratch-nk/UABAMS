@@ -74,13 +74,14 @@ const initCouchDB = async () => {
         await nano.db.list();
         console.log('Connected to CouchDB');
 
+        // create if missing
+        for (const name of ['accelerometer_events', 'monitoring_data', 'realtime_data']) {
+            try { await nano.db.get(name); }
+            catch (e) { await nano.db.create(name); console.log(`Created ${name}`); }
+        }
         accelerometerEventsDB = nano.use('accelerometer_events');
         monitoringDataDB      = nano.use('monitoring_data');
-
-        // realtime_data — create if missing
-        try { await nano.db.get('realtime_data'); }
-        catch (e) { await nano.db.create('realtime_data'); console.log('Created realtime_data'); }
-        realtimeDataDB = nano.use('realtime_data');
+        realtimeDataDB        = nano.use('realtime_data');
 
         // ── Create Mango indexes so .find() queries actually work ──────────
         // Without these, CouchDB does a full scan which can fail or return
@@ -88,6 +89,8 @@ const initCouchDB = async () => {
         await ensureIndex(accelerometerEventsDB, ['timestamp'],           'idx-timestamp');
         await ensureIndex(accelerometerEventsDB, ['timestamp','severity'],'idx-timestamp-severity');
         await ensureIndex(monitoringDataDB,      ['timestamp'],           'idx-timestamp');
+        await ensureIndex(realtimeDataDB,        ['timestamp'],           'idx-timestamp');
+        await ensureIndex(realtimeDataDB,        ['sensor','timestamp'],  'idx-sensor-timestamp');
 
         console.log('All databases and indexes ready');
     } catch (error) {
@@ -434,6 +437,41 @@ app.get('/api/management/sensor-chart', async (req, res) => {
     }
 });
 
+// GET /api/acceleration/channels?minutes=2
+// Returns per-second buckets of x,y,z per sensor for the last N minutes
+app.get('/api/acceleration/channels', async (req, res) => {
+    try {
+        const minutes = Math.min(parseInt(req.query.minutes) || 2, 1440);
+        const cutoff  = new Date(Date.now() - minutes * 60000).toISOString();
+        const all     = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['sensor', 'x', 'y', 'z', 'timestamp'],
+            limit:    20000
+        });
+
+        all.docs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+        // Bucket by second, keep latest x/y/z per sensor per second
+        const buckets = {};
+        for (const doc of all.docs) {
+            const sec = doc.timestamp.slice(0, 19);
+            if (!buckets[sec]) buckets[sec] = { ts: sec, lv: null, ll: null, rv: null, rl: null };
+            if (doc.sensor === 'left') {
+                buckets[sec].lv = doc.z != null ? +doc.z.toFixed(4) : null; // vertical
+                buckets[sec].ll = doc.x != null ? +doc.x.toFixed(4) : null; // lateral
+            } else if (doc.sensor === 'right') {
+                buckets[sec].rv = doc.z != null ? +doc.z.toFixed(4) : null;
+                buckets[sec].rl = doc.x != null ? +doc.x.toFixed(4) : null;
+            }
+        }
+
+        res.json(Object.values(buckets).sort((a, b) => a.ts.localeCompare(b.ts)));
+    } catch (e) {
+        console.error('/api/acceleration/channels error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // GET /api/management/sensor-chart-recent
 // Last 2 min of per-sensor readings for the rolling chart (stale = empty)
 app.get('/api/management/sensor-chart-recent', async (_req, res) => {
@@ -550,14 +588,14 @@ app.get('/api/management/active-alerts', async (req, res) => {
 // Last-known gForce per sensor (look back up to 6 h) → operational/warning/critical
 app.get('/api/management/system-health', async (req, res) => {
     try {
-        const now       = Date.now();
-        const cutoff24h = new Date(now - 24 * 3600000).toISOString();
-        const cutoff5m  = new Date(now - 10 * 1000).toISOString(); // online = last 10s
+        const now      = Date.now();
+        const cutoff6h = new Date(now - 6 * 3600000).toISOString();
+        const cutoff5m = new Date(now - 5 * 60000).toISOString();
 
         const all = await realtimeDataDB.find({
-            selector: { timestamp: { $gte: cutoff24h } },
+            selector: { timestamp: { $gte: cutoff6h } },
             fields:   ['sensor', 'gForce', 'timestamp'],
-            limit:    10000
+            limit:    5000
         });
 
         // Keep latest reading per sensor

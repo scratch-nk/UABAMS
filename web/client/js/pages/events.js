@@ -1,38 +1,116 @@
-/* events.js — Impact Events list with severity filter */
+/* events.js — Realtime Impact Events polled from DB every 2s */
 
-const events = [
-    { time: '2024-03-12 14:32:18', location: 'KM 1392+450', peak: 16.8, severity: 'high'   },
-    { time: '2024-03-12 14:30:15', location: 'KM 1395+120', peak: 15.2, severity: 'high'   },
-    { time: '2024-03-12 14:25:42', location: 'KM 1401+780', peak: 7.3,  severity: 'medium' },
-    { time: '2024-03-12 14:20:33', location: 'KM 1405+230', peak: 6.9,  severity: 'medium' },
-    { time: '2024-03-12 14:15:21', location: 'KM 1412+560', peak: 2.8,  severity: 'low'    }
-];
+const API = window.location.origin;
 
-function displayEvents() {
-    const filter   = document.getElementById('severityFilter').value;
-    const filtered = filter === 'all' ? events : events.filter(e => e.severity === filter);
+let allEvents = [];
+let filterVal = 'all';
+let lastIsoTime = '';
 
-    document.getElementById('totalEvents').textContent  = filtered.length;
-    document.getElementById('highEvents').textContent   = filtered.filter(e => e.severity === 'high').length;
-    document.getElementById('mediumEvents').textContent = filtered.filter(e => e.severity === 'medium').length;
-    document.getElementById('lowEvents').textContent    = filtered.filter(e => e.severity === 'low').length;
+function normalise(d) {
+    const sev = (d.severity || '').toLowerCase();
+    return {
+        time:    d.timestamp ? new Date(d.timestamp).toLocaleString() : '—',
+        isoTime: d.timestamp || '',
+        location: d.distance_m > 0
+            ? `KM ${Math.floor(d.distance_m / 1000)}+${String(d.distance_m % 1000).padStart(3,'0')}`
+            : 'Stationary',
+        peak:    +(d.peak_g || d.gForce || 0).toFixed(2),
+        sensor:  d.sensor || '—',
+        severity: sev,
+        pClass:  d.p_class || null,
+        rmsV:    d.rmsV,
+        rmsL:    d.rmsL,
+        isNew:   false
+    };
+}
 
-    document.getElementById('eventsList').innerHTML = filtered.map(event => `
-        <div class="event-card event-${event.severity}">
-            <div class="event-info">
-                <span class="event-time">${event.time}</span>
-                <span class="event-location">${event.location}</span>
+async function fetchEvents() {
+    try {
+        const data = await fetch(`${API}/api/impacts`).then(r => r.json());
+        const normalised = data.map(normalise);
+
+        // detect new arrivals (newer than last known)
+        if (lastIsoTime) {
+            normalised.forEach(e => {
+                if (e.isoTime > lastIsoTime) e.isNew = true;
+            });
+        }
+
+        // update lastIsoTime to most recent
+        if (normalised.length) {
+            const latest = normalised.reduce((a, b) => a.isoTime > b.isoTime ? a : b);
+            if (latest.isoTime > lastIsoTime) lastIsoTime = latest.isoTime;
+        }
+
+        const hadNew = normalised.some(e => e.isNew);
+        allEvents = normalised;
+        renderAll(hadNew);
+    } catch (e) { console.error('fetch impacts:', e); }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function filtered() {
+    return filterVal === 'all' ? allEvents : allEvents.filter(e => e.severity === filterVal);
+}
+
+function pClassBadge(p) {
+    if (!p) return '';
+    const map = { P1: '#22c55e', P2: '#f59e0b', P3: '#ef4444' };
+    return `<span class="pclass-badge" style="background:${map[p]||'#94a3b8'}">${p}</span>`;
+}
+
+function cardHTML(ev) {
+    const newTag = ev.isNew ? '<span class="new-tag">NEW</span>' : '';
+    return `
+    <div class="event-card event-${ev.severity}${ev.isNew ? ' event-flash' : ''}">
+        <div class="event-left">
+            <div class="event-top-row">
+                ${newTag}
+                <span class="event-time">${ev.time}</span>
+                <span class="event-sensor">${ev.sensor}</span>
+                ${pClassBadge(ev.pClass)}
             </div>
-            <span class="event-peak peak-${event.severity}">${event.peak.toFixed(1)} g</span>
+            <div class="event-bottom-row">
+                <span class="event-location"><i class="fas fa-map-marker-alt"></i> ${ev.location}</span>
+                ${ev.rmsV != null ? `<span class="event-meta">RMS-V ${ev.rmsV.toFixed(3)}g</span>` : ''}
+                ${ev.rmsL != null ? `<span class="event-meta">RMS-L ${ev.rmsL.toFixed(3)}g</span>` : ''}
+            </div>
         </div>
-    `).join('');
+        <div class="event-right">
+            <span class="event-peak peak-${ev.severity}">${ev.peak.toFixed(1)} g</span>
+            <span class="sev-label sev-${ev.severity}">${ev.severity.toUpperCase()}</span>
+        </div>
+    </div>`;
 }
 
+function renderAll(flashDot = false) {
+    const list = filtered();
+    document.getElementById('totalEvents').textContent  = list.length;
+    document.getElementById('highEvents').textContent   = list.filter(e => e.severity === 'high').length;
+    document.getElementById('mediumEvents').textContent = list.filter(e => e.severity === 'medium').length;
+    document.getElementById('lowEvents').textContent    = list.filter(e => e.severity === 'low').length;
+    document.getElementById('eventsList').innerHTML =
+        list.length ? list.map(cardHTML).join('') : '<p class="empty">No events found.</p>';
+
+    if (flashDot) {
+        const dot = document.getElementById('liveDot');
+        dot.classList.add('pulse');
+        setTimeout(() => dot.classList.remove('pulse'), 800);
+    }
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────
+document.getElementById('severityFilter').addEventListener('change', e => {
+    filterVal = e.target.value;
+    renderAll();
+});
+
+// ── Export ────────────────────────────────────────────────────────────────
 function exportEvents() {
-    alert('Events exported successfully!');
+    window.open(`${API}/api/impacts/export/csv`, '_blank');
 }
-
-document.getElementById('severityFilter').addEventListener('change', displayEvents);
-displayEvents();
-
 window.exportEvents = exportEvents;
+
+// ── Boot + poll every 2s ──────────────────────────────────────────────────
+fetchEvents();
+setInterval(fetchEvents, 2000);
