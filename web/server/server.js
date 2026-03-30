@@ -112,17 +112,26 @@ const initCouchDB = async () => {
     await nano.db.list();
     console.log("Connected to CouchDB");
 
-    for (const name of [
-      "accelerometer_events",
-      "monitoring_data",
-      "realtime_data",
-    ]) {
-      try {
-        await nano.db.get(name);
-      } catch (e) {
-        await nano.db.create(name);
-        console.log(`Created ${name}`);
-      }
+        accelerometerEventsDB = nano.use('accelerometer_events');
+        monitoringDataDB      = nano.use('monitoring_data');
+
+        // realtime_data — create if missing
+        try { await nano.db.get('realtime_data'); }
+        catch (e) { await nano.db.create('realtime_data'); console.log('Created realtime_data'); }
+        realtimeDataDB = nano.use('realtime_data');
+
+        // ── Create Mango indexes so .find() queries actually work ──────────
+        // Without these, CouchDB does a full scan which can fail or return
+        // wrong results on large databases
+        await ensureIndex(accelerometerEventsDB, ['timestamp'],           'idx-timestamp');
+        await ensureIndex(accelerometerEventsDB, ['timestamp','severity'],'idx-timestamp-severity');
+        await ensureIndex(monitoringDataDB,      ['timestamp'],           'idx-timestamp');
+        await ensureIndex(realtimeDataDB,        ['timestamp'],           'idx-timestamp');
+        await ensureIndex(realtimeDataDB,        ['sensor','timestamp'],  'idx-sensor-timestamp');
+
+        console.log('All databases and indexes ready');
+    } catch (error) {
+        console.error('CouchDB initialization error:', error);
     }
     accelerometerEventsDB = nano.use("accelerometer_events");
     monitoringDataDB = nano.use("monitoring_data");
@@ -149,6 +158,30 @@ const initCouchDB = async () => {
     // keep dbReady = false, will retry later? We'll just keep it false.
   }
 };
+
+// ── DB clock anchor — returns latest timestamp in realtimeDataDB ─────────
+// Fixes clock skew: if server clock is ahead of DB data, cutoffs are wrong
+let _dbLatestTs = null;  // cached, refreshed every 30s
+async function getDBNow() {
+    try {
+        const r = await realtimeDataDB.find({
+            selector: { timestamp: { $gt: '' } },
+            fields: ['timestamp'], sort: [{ timestamp: 'desc' }],
+            limit: 1, use_index: 'idx-timestamp'
+        });
+        if (r.docs.length) {
+            let dbTs = new Date(r.docs[0].timestamp);
+            // Also check peaksLog latest — use whichever is newer
+            if (peaksLog && peaksLog.length) {z
+                const logLatest = new Date(peaksLog[peaksLog.length - 1].timestamp);
+                if (logLatest > dbTs) dbTs = logLatest;
+            }
+            _dbLatestTs = dbTs;
+        }
+    } catch (e) { /* use cached or server clock */ }
+    return _dbLatestTs || new Date();
+}
+setInterval(() => getDBNow(), 30000);
 
 // ── MQTT ──────────────────────────────────────────────────────────────────
 let lastDataTimestamp = null;
@@ -230,19 +263,48 @@ let lastHealthStatus = null;
 let totalDistanceM = 0;
 let lastGpsCoord = null;
 
-// ── computeStats (unchanged) ─────────────────────────────────────────────
+// ── computeStats ──────────────────────────────────────────────────────────
 async function computeStats(hours = 24) {
-  const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
+    const dbNow  = await getDBNow();
+    const cutoff = new Date(dbNow.getTime() - hours * 3600000).toISOString();
 
-  if (accelerometerEventsDB && dbReady) {
-    try {
-      const all = await accelerometerEventsDB.list({ include_docs: true });
-      const docs = all.rows
-        .map((r) => r.doc)
-        .filter(
-          (d) =>
-            d && d.timestamp && d.timestamp >= cutoff && !d._id.startsWith("_"),
-        )
+    // ── CouchDB path ──────────────────────────────────────────────────────
+    if (accelerometerEventsDB) {
+        try {
+            const all  = await accelerometerEventsDB.list({ include_docs: true });
+            const docs = all.rows
+                .map(r => r.doc)
+                .filter(d => d && d.timestamp && d.timestamp >= cutoff && !d._id.startsWith('_'))
+                .sort((a, b) => b.timestamp.localeCompare(a.timestamp)); // newest first
+
+            if (docs.length > 0 || all.rows.length > 0) {
+                const peaks   = docs.map(d => d.peak_g || 0);
+                const lastDoc = docs[0]; // most recent impact
+                const stats   = {
+                    total:              docs.length,
+                    highSeverity:       docs.filter(d => d.severity === 'HIGH').length,
+                    medium:             docs.filter(d => d.severity === 'MEDIUM').length,
+                    low:                docs.filter(d => d.severity === 'LOW').length,
+                    maxPeak:            peaks.length ? Math.max(...peaks) : 0,
+                    avgPeak:            peaks.length ? peaks.reduce((a,b) => a+b,0) / peaks.length : 0,
+                    lastPeak:           lastDoc ? (lastDoc.peak_g || 0) : 0,
+                    lastPeakClass:      lastDoc ? (getPClass(lastDoc.peak_g) || '—') : '—',
+                    lastPeakTimestamp:  lastDoc ? lastDoc.timestamp : null,
+                    lastPeakSensor:     lastDoc ? lastDoc.sensor    : null,
+                    totalDistanceM,
+                    source: 'couchdb'
+                };
+                console.log(`[stats] CouchDB: ${stats.total} impacts, lastPeak=${stats.lastPeak}g (${stats.lastPeakClass})`);
+                return stats;
+            }
+        } catch (e) {
+            console.error('[stats] CouchDB failed, falling back to JSON:', e.message);
+        }
+    }
+
+    // ── JSON fallback ─────────────────────────────────────────────────────
+    const recent  = peaksLog
+        .filter(p => p.timestamp >= cutoff)
         .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
       if (docs.length > 0 || all.rows.length > 0) {
@@ -300,51 +362,199 @@ async function computeStats(hours = 24) {
   return stats;
 }
 
-// ── API endpoints (unchanged, just ensure they use dbReady if needed) ─────
-app.get("/api/impacts/stats", async (req, res) => {
-  try {
-    const hours = parseInt(req.query.hours) || 24;
-    const stats = await computeStats(hours);
-    res.json(stats);
-  } catch (e) {
-    console.error("/api/impacts/stats error:", e);
-    res.status(500).json({ error: e.message });
-  }
+// ── API endpoints ─────────────────────────────────────────────────────────
+app.get('/api/impacts/stats', async (req, res) => {
+    try {
+        const hours = parseInt(req.query.hours) || 24;
+        const stats = await computeStats(hours);
+        res.json(stats);
+    } catch (e) {
+        console.error('/api/impacts/stats error:', e);
+        res.status(500).json({ error: e.message });
+    }
 });
 
-app.get("/api/latest/sensor", async (req, res) => {
-  try {
-    const result = { left: null, right: null };
-    if (monitoringDataDB && dbReady) {
-      const all = await monitoringDataDB.list({
-        include_docs: true,
-        descending: true,
-        limit: 200,
-      });
-      const docs = all.rows.map((r) => r.doc).filter((d) => d && d.timestamp);
-      for (const doc of docs) {
-        const side = doc.device_id;
-        if ((side === "left" || side === "right") && !result[side]) {
-          result[side] = {
-            sensor: side,
-            x: doc.x_axis ?? 0,
-            y: doc.y_axis ?? 0,
-            z: doc.z_axis ?? 0,
-            rmsV: doc.rmsV,
-            rmsL: doc.rmsL,
-            sdV: doc.sdV,
-            sdL: doc.sdL,
-            p2pV: doc.p2pV,
-            p2pL: doc.p2pL,
-            peak: doc.peak,
-            gForce: doc.gForce,
-            fs: doc.fs,
-            window: doc.window_ms,
-            timestamp: doc.timestamp,
-          };
+// ── GET /api/latest/sensor ────────────────────────────────────────────────
+// Returns last recorded reading for each sensor side from monitoring_data
+// Used to pre-populate the UI on page load before live data arrives
+app.get('/api/latest/sensor', async (req, res) => {
+    try {
+        const result = { left: null, right: null };
+
+        if (monitoringDataDB) {
+            // Fetch last 200 docs and pick the most recent per side
+            const all  = await monitoringDataDB.list({ include_docs: true, descending: true, limit: 200 });
+            const docs = all.rows.map(r => r.doc).filter(d => d && d.timestamp);
+
+            for (const doc of docs) {
+                const side = doc.device_id;
+                if ((side === 'left'  || side === 'right') && !result[side]) {
+                    result[side] = {
+                        sensor:    side,
+                        x:         doc.x_axis   ?? 0,
+                        y:         doc.y_axis   ?? 0,
+                        z:         doc.z_axis   ?? 0,
+                        rmsV:      doc.rmsV,
+                        rmsL:      doc.rmsL,
+                        sdV:       doc.sdV,
+                        sdL:       doc.sdL,
+                        p2pV:      doc.p2pV,
+                        p2pL:      doc.p2pL,
+                        peak:      doc.peak,
+                        gForce:    doc.gForce,
+                        fs:        doc.fs,
+                        window:    doc.window_ms,
+                        timestamp: doc.timestamp
+                    };
+                }
+                if (result.left && result.right) break;
+            }
         }
-        if (result.left && result.right) break;
-      }
+
+        // Fallback: use peaksLog for last known values
+        if (!result.left || !result.right) {
+            const sorted = [...peaksLog].sort((a,b) => b.timestamp.localeCompare(a.timestamp));
+            for (const p of sorted) {
+                if ((p.sensor === 'left'  || p.sensor === 'right') && !result[p.sensor]) {
+                    result[p.sensor] = {
+                        sensor: p.sensor, x: p.x ?? 0, y: p.y ?? 0, z: p.z ?? 0,
+                        rmsV: p.rmsV, rmsL: p.rmsL, sdV: p.sdV, sdL: p.sdL,
+                        p2pV: p.p2pV, p2pL: p.p2pL, peak: p.peak_g,
+                        gForce: p.gForce, timestamp: p.timestamp
+                    };
+                }
+                if (result.left && result.right) break;
+            }
+        }
+
+        res.json(result);
+    } catch (e) {
+        console.error('/api/latest/sensor error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ── GET /api/latest/health ────────────────────────────────────────────────
+// Returns the most recent system health status (stored in memory from MQTT)
+// On server restart we have no history, so returns null if never received
+app.get('/api/latest/health', (req, res) => {
+    res.json(lastHealthStatus);
+});
+
+// ── GET /api/history/sensor ───────────────────────────────────────────────
+// Returns last N monitoring_data points for graph pre-population
+// Includes both left and right, sorted by timestamp ascending
+app.get('/api/history/sensor', async (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    try {
+        if (monitoringDataDB) {
+            const all  = await monitoringDataDB.list({ include_docs: true, descending: true, limit: limit * 2 });
+            const docs = all.rows
+                .map(r => r.doc)
+                .filter(d => d && d.timestamp && !d._id?.startsWith('_'))
+                .sort((a, b) => a.timestamp.localeCompare(b.timestamp)) // ascending
+                .slice(-limit);
+
+            return res.json(docs.map(d => ({
+                sensor:    d.device_id,
+                x:         d.x_axis   ?? 0,
+                y:         d.y_axis   ?? 0,
+                z:         d.z_axis   ?? 0,
+                rmsV:      d.rmsV,
+                rmsL:      d.rmsL,
+                gForce:    d.gForce,
+                timestamp: d.timestamp
+            })));
+        }
+    } catch (e) {
+        console.error('/api/history/sensor error:', e.message);
+    }
+    res.json([]);
+});
+
+app.get('/api/impacts', async (req, res) => {
+    try {
+        if (accelerometerEventsDB) {
+            const response = await accelerometerEventsDB.list(
+                { include_docs: true, descending: true, limit: 200 });
+            const docs = response.rows.map(r => r.doc).filter(d => d && !d._id?.startsWith('_'));
+            if (docs.length) return res.json(docs);
+        }
+    } catch (e) { console.error('/api/impacts error:', e.message); }
+    res.json([...peaksLog].reverse().slice(0, 200));
+});
+
+app.get('/api/historical/graph/:hours', async (req, res) => {
+    try {
+        const hours     = parseInt(req.params.hours) || 24;
+        const dbNow     = await getDBNow();
+        const timeLimit = new Date(dbNow.getTime() - hours * 3600000).toISOString();
+        const response  = await monitoringDataDB.find({
+            selector: { timestamp: { $gte: timeLimit } },
+            sort:     [{ timestamp: 'asc' }],
+            limit:    2000
+        });
+        res.json(response.docs.map((doc, i) => ({
+            distance: i * 100,
+            accel1: doc.x_axis   || 0,
+            accel2: doc.y_axis   || 0,
+            magnitude: doc.z_axis || 0,
+            timestamp: doc.timestamp,
+            rmsV: doc.rmsV, rmsL: doc.rmsL,
+            sdV:  doc.sdV,  sdL:  doc.sdL,
+            p2pV: doc.p2pV, p2pL: doc.p2pL
+        })));
+    } catch (e) {
+        console.error('/api/historical/graph error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/realtime/status', (req, res) => {
+    res.json({
+        connected:          mqttConnected,
+        receiving_data:     mqttConnected && lastDataTimestamp && (Date.now() - lastDataTimestamp < 10000),
+        last_data_received: lastDataTimestamp,
+        time_since_last:    lastDataTimestamp ? Math.floor((Date.now() - lastDataTimestamp) / 1000) : null
+    });
+});
+
+// ── Management Dashboard APIs ─────────────────────────────────────────────
+
+// GET /api/management/sensor-chart?hours=24
+// Hourly-bucketed average gForce for the sensor performance line chart
+app.get('/api/management/sensor-chart', async (req, res) => {
+    const hours = Math.min(parseInt(req.query.hours) || 24, 168);
+    try {
+        const dbNow  = await getDBNow();
+        const cutoff = new Date(dbNow.getTime() - hours * 3600000).toISOString();
+        const all    = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['timestamp', 'gForce'],
+            limit:    10000
+        });
+
+        const buckets = {};
+        for (const doc of all.docs) {
+            const h = doc.timestamp.slice(0, 13); // "YYYY-MM-DDTHH"
+            if (!buckets[h]) buckets[h] = { sum: 0, count: 0 };
+            buckets[h].sum   += doc.gForce || 0;
+            buckets[h].count += 1;
+        }
+
+        const now    = new Date();
+        const result = [];
+        for (let i = hours - 1; i >= 0; i--) {
+            const d     = new Date(now.getTime() - i * 3600000);
+            const h     = d.toISOString().slice(0, 13);
+            const label = `${String(d.getHours()).padStart(2, '0')}:00`;
+            const b     = buckets[h];
+            result.push({ label, avg: b ? +(b.sum / b.count).toFixed(4) : null });
+        }
+        res.json(result);
+    } catch (e) {
+        console.error('/api/management/sensor-chart error:', e.message);
+        res.status(500).json({ error: e.message });
     }
     if (!result.left || !result.right) {
       const sorted = [...peaksLog].sort((a, b) =>
@@ -381,9 +591,30 @@ app.get("/api/latest/sensor", async (req, res) => {
   }
 });
 
-app.get("/api/latest/health", (req, res) => {
-  res.json(lastHealthStatus);
-});
+// GET /api/acceleration/channels?minutes=2
+// Returns per-second buckets of x,y,z per sensor for the last N minutes
+app.get('/api/acceleration/channels', async (req, res) => {
+    try {
+        const minutes = Math.min(parseInt(req.query.minutes) || 2, 1440);
+        // Find the latest timestamp in DB first, then work backwards from it
+        // This handles clock skew between server and stored data
+        const latestDoc = await realtimeDataDB.find({
+            selector: { timestamp: { $gt: '' } },
+            fields:   ['timestamp'],
+            sort:     [{ timestamp: 'desc' }],
+            limit:    1,
+            use_index: 'idx-timestamp'
+        });
+        const anchorTs  = latestDoc.docs.length
+            ? new Date(latestDoc.docs[0].timestamp)
+            : new Date();
+        const cutoff    = new Date(anchorTs.getTime() - minutes * 60000).toISOString();
+        const all       = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['sensor', 'x', 'y', 'z', 'timestamp'],
+            limit:    20000,
+            use_index: 'idx-timestamp'
+        });
 
 app.get("/api/history/sensor", async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 100, 500);
@@ -453,66 +684,97 @@ app.get("/api/impacts", async (req, res) => {
   res.json(fallback.slice(0, 1000));
 });
 
-app.get("/api/historical/graph/:hours", async (req, res) => {
-  try {
-    const hours = parseInt(req.params.hours) || 24;
-    const timeLimit = new Date(Date.now() - hours * 3600000).toISOString();
-    const response = await monitoringDataDB.find({
-      selector: { timestamp: { $gte: timeLimit } },
-      sort: [{ timestamp: "asc" }],
-      limit: 2000,
-    });
-    res.json(
-      response.docs.map((doc, i) => ({
-        distance: i * 100,
-        accel1: doc.x_axis || 0,
-        accel2: doc.y_axis || 0,
-        magnitude: doc.z_axis || 0,
-        timestamp: doc.timestamp,
-        rmsV: doc.rmsV,
-        rmsL: doc.rmsL,
-        sdV: doc.sdV,
-        sdL: doc.sdL,
-        p2pV: doc.p2pV,
-        p2pL: doc.p2pL,
-      })),
-    );
-  } catch (e) {
-    console.error("/api/historical/graph error:", e);
-    res.status(500).json({ error: e.message });
-  }
+// GET /api/management/sensor-chart-recent
+// Last 2 min of per-sensor readings for the rolling chart (stale = empty)
+app.get('/api/management/sensor-chart-recent', async (_req, res) => {
+    try {
+        const dbNow  = await getDBNow();
+        const cutoff = new Date(dbNow.getTime() - 2 * 60000).toISOString();
+        const all    = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['sensor', 'gForce', 'timestamp'],
+            limit:    5000
+        });
+        // Sort by timestamp
+        all.docs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        // Pair readings: for each timestamp bucket (per second) emit one point
+        const buckets = {};
+        for (const doc of all.docs) {
+            const sec = doc.timestamp.slice(0, 19); // "YYYY-MM-DDTHH:MM:SS"
+            if (!buckets[sec]) buckets[sec] = { ts: sec, left: null, right: null };
+            buckets[sec][doc.sensor] = doc.gForce || 0;
+        }
+        const result = Object.values(buckets).sort((a, b) => a.ts.localeCompare(b.ts));
+        res.json(result);
+    } catch (e) {
+        console.error('/api/management/sensor-chart-recent error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
-app.get("/api/realtime/status", (req, res) => {
-  res.json({
-    connected: mqttConnected,
-    receiving_data:
-      mqttConnected &&
-      lastDataTimestamp &&
-      Date.now() - lastDataTimestamp < 10000,
-    last_data_received: lastDataTimestamp,
-    time_since_last: lastDataTimestamp
-      ? Math.floor((Date.now() - lastDataTimestamp) / 1000)
-      : null,
-  });
+// GET /api/management/uptime
+// % of hours in last 24 h that had at least one sensor reading
+app.get('/api/management/uptime', async (req, res) => {
+    const hours = 24;
+    try {
+        const dbNow  = await getDBNow();
+        const cutoff = new Date(dbNow.getTime() - hours * 3600000).toISOString();
+        const all    = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff } },
+            fields:   ['timestamp'],
+            limit:    10000
+        });
+        const activeHours = new Set(all.docs.map(d => d.timestamp.slice(0, 13)));
+        const pct         = +((activeHours.size / hours) * 100).toFixed(1);
+        res.json({
+            uptime_pct:      pct,
+            active_hours:    activeHours.size,
+            window_hours:    hours,
+            server_uptime_s: Math.floor(process.uptime())
+        });
+    } catch (e) {
+        console.error('/api/management/uptime error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
 });
 
-// ── Management Dashboard APIs (unchanged) ─────────────────────────────────
-app.get("/api/management/sensor-chart", async (req, res) => {
-  const hours = Math.min(parseInt(req.query.hours) || 24, 168);
-  try {
-    const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
-    const all = await realtimeDataDB.find({
-      selector: { timestamp: { $gte: cutoff } },
-      fields: ["timestamp", "gForce"],
-      limit: 10000,
-    });
-    const buckets = {};
-    for (const doc of all.docs) {
-      const h = doc.timestamp.slice(0, 13);
-      if (!buckets[h]) buckets[h] = { sum: 0, count: 0 };
-      buckets[h].sum += doc.gForce || 0;
-      buckets[h].count += 1;
+// GET /api/management/active-sensors
+// Sensors seen in last 24 h; "online" = sent data in last 10 seconds
+app.get('/api/management/active-sensors', async (req, res) => {
+    try {
+        const dbNow     = await getDBNow();
+        const now       = dbNow.getTime();
+        const cutoff24h = new Date(now - 24 * 3600000).toISOString();
+        const cutoff10s = new Date(now - 10 * 1000).toISOString();
+
+        const all = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff24h } },
+            fields:   ['sensor', 'timestamp'],
+            limit:    10000
+        });
+
+        // Track last-seen timestamp per sensor
+        const lastSeen = {};
+        for (const doc of all.docs) {
+            if (!lastSeen[doc.sensor] || doc.timestamp > lastSeen[doc.sensor])
+                lastSeen[doc.sensor] = doc.timestamp;
+        }
+
+        const sensors = Object.keys(lastSeen);
+        // A sensor is "online" if it sent data in the last 10 seconds
+        const onlineSensors = sensors.filter(s => lastSeen[s] >= cutoff10s);
+        const knownSensors  = sensors.filter(s => lastSeen[s] <  cutoff10s);
+
+        res.json({
+            count:          onlineSensors.length,
+            total_known:    sensors.length,
+            online:         onlineSensors,
+            last_known:     knownSensors,
+            last_seen:      lastSeen   // ISO timestamp per sensor
+        });
+    } catch (e) {
+        console.error('/api/management/active-sensors error:', e.message);
+        res.status(500).json({ error: e.message });
     }
     const now = new Date();
     const result = [];
@@ -530,28 +792,25 @@ app.get("/api/management/sensor-chart", async (req, res) => {
   }
 });
 
-app.get("/api/acceleration/channels", async (req, res) => {
-  try {
-    const minutes = Math.min(parseInt(req.query.minutes) || 2, 1440);
-    const cutoff = new Date(Date.now() - minutes * 60000).toISOString();
-    const all = await realtimeDataDB.find({
-      selector: { timestamp: { $gte: cutoff } },
-      fields: ["sensor", "x", "y", "z", "timestamp"],
-      limit: 20000,
-    });
-    all.docs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const buckets = {};
-    for (const doc of all.docs) {
-      const sec = doc.timestamp.slice(0, 19);
-      if (!buckets[sec])
-        buckets[sec] = { ts: sec, lv: null, ll: null, rv: null, rl: null };
-      if (doc.sensor === "left") {
-        buckets[sec].lv = doc.z != null ? +doc.z.toFixed(4) : null;
-        buckets[sec].ll = doc.x != null ? +doc.x.toFixed(4) : null;
-      } else if (doc.sensor === "right") {
-        buckets[sec].rv = doc.z != null ? +doc.z.toFixed(4) : null;
-        buckets[sec].rl = doc.x != null ? +doc.x.toFixed(4) : null;
-      }
+// GET /api/management/active-alerts
+// HIGH/MEDIUM/LOW impact counts from peaksLog in last 24 h
+app.get('/api/management/active-alerts', async (req, res) => {
+    try {
+        const dbNow  = await getDBNow();
+        const cutoff = new Date(dbNow.getTime() - 24 * 3600000).toISOString();
+        const recent = peaksLog.filter(p => p.timestamp >= cutoff);
+        const high   = recent.filter(p => p.severity === 'HIGH').length;
+        const medium = recent.filter(p => p.severity === 'MEDIUM').length;
+        const low    = recent.filter(p => p.severity === 'LOW').length;
+        res.json({
+            total:             recent.length,
+            high, medium, low,
+            require_attention: high + medium,
+            latest: [...recent].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 5)
+        });
+    } catch (e) {
+        console.error('/api/management/active-alerts error:', e.message);
+        res.status(500).json({ error: e.message });
     }
     res.json(Object.values(buckets).sort((a, b) => a.ts.localeCompare(b.ts)));
   } catch (e) {
@@ -560,20 +819,47 @@ app.get("/api/acceleration/channels", async (req, res) => {
   }
 });
 
-app.get("/api/management/sensor-chart-recent", async (_req, res) => {
-  try {
-    const cutoff = new Date(Date.now() - 2 * 60000).toISOString();
-    const all = await realtimeDataDB.find({
-      selector: { timestamp: { $gte: cutoff } },
-      fields: ["sensor", "gForce", "timestamp"],
-      limit: 5000,
-    });
-    all.docs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-    const buckets = {};
-    for (const doc of all.docs) {
-      const sec = doc.timestamp.slice(0, 19);
-      if (!buckets[sec]) buckets[sec] = { ts: sec, left: null, right: null };
-      buckets[sec][doc.sensor] = doc.gForce || 0;
+// GET /api/management/system-health
+// Last-known gForce per sensor (look back up to 6 h) → operational/warning/critical
+app.get('/api/management/system-health', async (req, res) => {
+    try {
+        const dbNow    = await getDBNow();
+        const now      = dbNow.getTime();
+        const cutoff6h = new Date(now - 6 * 3600000).toISOString();
+        const cutoff5m = new Date(now - 5 * 60000).toISOString();
+
+        const all = await realtimeDataDB.find({
+            selector: { timestamp: { $gte: cutoff6h } },
+            fields:   ['sensor', 'gForce', 'timestamp'],
+            limit:    5000
+        });
+
+        // Keep latest reading per sensor
+        const latest = {};
+        for (const doc of all.docs) {
+            if (!latest[doc.sensor] || doc.timestamp > latest[doc.sensor].timestamp)
+                latest[doc.sensor] = doc;
+        }
+
+        let operational = 0, warning = 0, critical = 0;
+        for (const doc of Object.values(latest)) {
+            const g      = doc.gForce || 0;
+            const isLive = doc.timestamp >= cutoff5m;
+            if (!isLive) {
+                // sensor not seen recently → treat as offline (critical)
+                critical++;
+            } else if (g >= 15) critical++;
+            else if  (g >= 5)  warning++;
+            else               operational++;
+        }
+
+        // If no data at all in last 6 h, both sensors are unknown/critical
+        if (Object.keys(latest).length === 0) critical = 2;
+
+        res.json({ operational, warning, critical, total: operational + warning + critical });
+    } catch (e) {
+        console.error('/api/management/system-health error:', e.message);
+        res.status(500).json({ error: e.message });
     }
     const result = Object.values(buckets).sort((a, b) =>
       a.ts.localeCompare(b.ts),
@@ -736,43 +1022,40 @@ app.get("/api", (req, res) => {
 });
 
 // ── WebSocket ─────────────────────────────────────────────────────────────
-io.on("connection", async (socket) => {
-  console.log("Client connected:", socket.id);
-  try {
-    const timeLimit = new Date(Date.now() - 86400000).toISOString();
-    const response = await monitoringDataDB.find({
-      selector: { timestamp: { $gte: timeLimit } },
-      sort: [{ timestamp: "asc" }],
-      limit: 2000,
-    });
-    socket.emit(
-      "historical-data",
-      response.docs.map((doc, i) => ({
-        distance: i * 100,
-        accel1: doc.x_axis || 0,
-        accel2: doc.y_axis || 0,
-        magnitude: doc.z_axis || 0,
-        timestamp: doc.timestamp,
-        rmsV: doc.rmsV,
-        rmsL: doc.rmsL,
-        sdV: doc.sdV,
-        sdL: doc.sdL,
-        p2pV: doc.p2pV,
-        p2pL: doc.p2pL,
-      })),
-    );
-  } catch (e) {
-    console.error("sendHistoricalData error:", e.message);
-    socket.emit("historical-data", []);
-  }
-  try {
-    const stats = await computeStats(24);
-    socket.emit("stats-update", stats);
-    console.log(`Sent stats to ${socket.id}: total=${stats.total}`);
-  } catch (e) {
-    console.error("stats-update on connect error:", e.message);
-  }
-  socket.on("disconnect", () => console.log("Client disconnected:", socket.id));
+io.on('connection', async (socket) => {
+    console.log('Client connected:', socket.id);
+
+    // Send historical chart data
+    try {
+        const dbNow     = await getDBNow();
+        const timeLimit = new Date(dbNow.getTime() - 86400000).toISOString();
+        const response  = await monitoringDataDB.find({
+            selector: { timestamp: { $gte: timeLimit } },
+            sort: [{ timestamp: 'asc' }], limit: 2000
+        });
+        socket.emit('historical-data', response.docs.map((doc, i) => ({
+            distance: i * 100,
+            accel1: doc.x_axis || 0, accel2: doc.y_axis || 0,
+            magnitude: doc.z_axis || 0, timestamp: doc.timestamp,
+            rmsV: doc.rmsV, rmsL: doc.rmsL,
+            sdV: doc.sdV,   sdL: doc.sdL,
+            p2pV: doc.p2pV, p2pL: doc.p2pL
+        })));
+    } catch (e) {
+        console.error('sendHistoricalData error:', e.message);
+        socket.emit('historical-data', []);
+    }
+
+    // Send current stats immediately on connect so frontend shows correct counts
+    try {
+        const stats = await computeStats(24);
+        socket.emit('stats-update', stats);
+        console.log(`Sent stats to ${socket.id}: total=${stats.total}`);
+    } catch (e) {
+        console.error('stats-update on connect error:', e.message);
+    }
+
+    socket.on('disconnect', () => console.log('Client disconnected:', socket.id));
 });
 
 // ── MQTT setup (now after DB is ready) ───────────────────────────────────
@@ -796,16 +1079,19 @@ async function startMqtt() {
     );
     mqttConnected = true;
     [
-      "adj/datalogger/sensors/left",
-      "adj/datalogger/sensors/right",
-      "adj/datalogger/health",
-      "adj/datalogger/sensors/accelerometer",
-      "adj/datalogger/sensors/gps",
-    ].forEach((topic) => {
-      mqttClient.subscribe(topic, (err) => {
-        if (err) console.error(`Subscribe failed ${topic}:`, err.message);
-        else console.log(`Subscribed: ${topic}`);
-      });
+        'adj/datalogger/sensors/left',
+        'adj/datalogger/sensors/right',
+        'adj/datalogger/health',
+        'adj/datalogger/sensors/accelerometer',
+        'adj/datalogger/sensors/gps',
+        'sensor/railway/accelerometer/#',
+        'sensor/accelerometer/#',
+        'sensor/gps/#'
+    ].forEach(topic => {
+        mqttClient.subscribe(topic, err => {
+            if (err) console.error(`Subscribe failed ${topic}:`, err.message);
+            else     console.log(`Subscribed: ${topic}`);
+        });
     });
   });
 
@@ -824,13 +1110,46 @@ async function startMqtt() {
       console.log(`\n=== Received on: ${topic} ===`);
       console.log(`Raw: ${msgStr.substring(0, 200)}`);
 
-      if (topic === "adj/datalogger/health") {
-        const health = parseHealthMessage(msgStr);
-        lastHealthStatus = health;
-        console.log("Health:", health);
-        io.emit("system-health", health);
-        return;
-      }
+        // ── GPS topic ─────────────────────────────────────────────────────
+        // Format: [GPS] T-13:13:47 D-27-03-2026 LAT:28584835N LON:77315948E SPD:25cm/s
+        if (topic === 'adj/datalogger/sensors/gps' || topic.includes('gps')) {
+            const latM  = msgStr.match(/LAT:(\d+)([NS])/i);
+            const lonM  = msgStr.match(/LON:(\d+)([EW])/i);
+            const spdM  = msgStr.match(/SPD:(\d+(?:\.\d+)?)cm\/s/i);
+
+            if (latM && lonM) {
+                // Raw values are in degrees * 1e6 (e.g. 28584835 → 28.584835)
+                const rawLat = parseInt(latM[1]);
+                const rawLon = parseInt(lonM[1]);
+                const lat = (rawLat / 1e6) * (latM[2].toUpperCase() === 'S' ? -1 : 1);
+                const lng = (rawLon / 1e6) * (lonM[2].toUpperCase() === 'W' ? -1 : 1);
+                const speedCms = spdM ? parseFloat(spdM[1]) : 0;
+                const speedKmh = +(speedCms * 0.036).toFixed(2); // cm/s → km/h
+
+                // Distance accumulation
+                if (lastGpsCoord) {
+                    const R    = 6371000; // Earth radius in metres
+                    const dLat = (lat - lastGpsCoord.lat) * Math.PI / 180;
+                    const dLon = (lng - lastGpsCoord.lng) * Math.PI / 180;
+                    const a    = Math.sin(dLat/2)**2 +
+                                 Math.cos(lastGpsCoord.lat * Math.PI/180) *
+                                 Math.cos(lat * Math.PI/180) *
+                                 Math.sin(dLon/2)**2;
+                    const d    = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                    if (d < 500) totalDistanceM += d; // ignore GPS jumps > 500 m
+                }
+                lastGpsCoord = { lat, lng };
+
+                const gpsPayload = { lat, lng, speedKmh, totalDistanceM, timestamp };
+                io.emit('gps-data', gpsPayload);
+            }
+            return;
+        }
+
+        // ── Sensor topics only ────────────────────────────────────────────
+        const sensorSide = topic.includes('right') ? 'right'
+                         : topic.includes('left')  ? 'left' : null;
+        if (!sensorSide) return;
 
       const sensorSide = topic.includes("right")
         ? "right"
@@ -1035,11 +1354,66 @@ app.post("/api/reset", async (req, res) => {
         { name: "realtime_data", ref: () => realtimeDataDB },
       ];
 
-      for (const db of dbsToClear) {
+            for (const db of dbsToClear) {
+                try {
+                    // Drop and recreate — fastest way to clear all docs
+                    await nano.db.destroy(db.name);
+                    await nano.db.create(db.name);
+                    console.log(`[reset] Cleared DB: ${db.name}`);
+                } catch (e) {
+                    console.error(`[reset] Failed to clear ${db.name}:`, e.message);
+                }
+            }
+
+            // Re-assign DB handles after recreate
+            accelerometerEventsDB = nano.use('accelerometer_events');
+            monitoringDataDB      = nano.use('monitoring_data');
+            realtimeDataDB        = nano.use('realtime_data');
+
+            // Recreate indexes
+            await ensureIndex(accelerometerEventsDB, ['timestamp'],            'idx-timestamp');
+            await ensureIndex(accelerometerEventsDB, ['timestamp','severity'], 'idx-timestamp-severity');
+            await ensureIndex(monitoringDataDB,      ['timestamp'],            'idx-timestamp');
+
+            // Wipe JSON fallback file
+            peaksLog = [];
+            savePeaksLog(peaksLog);
+            console.log('[reset] JSON fallback cleared');
+        }
+
+        // Always broadcast zero stats to all clients
+        const zeroStats = { total: 0, highSeverity: 0, medium: 0, low: 0, maxPeak: 0, avgPeak: 0, source: 'reset' };
+        io.emit('stats-update', zeroStats);
+        io.emit('display-reset', { saveToDb });
+
+        console.log(`[reset] Complete — saveToDb=${saveToDb}`);
+        res.json({ success: true, saveToDb, message: saveToDb ? 'Display reset — DB preserved' : 'Full reset — DB cleared' });
+
+    } catch (e) {
+        console.error('[reset] Error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ── CSV Export endpoint ───────────────────────────────────────────────────
+// GET /api/impacts/export/csv?hours=24
+// Returns a properly formatted CSV matching the impact_report.csv structure
+// Columns: timestamp,sensor,severity,peak_g,gForce,rmsV,rmsL,sdV,sdL,p2pV,p2pL,x,y,z,fs,window_ms
+app.get('/api/impacts/export/csv', async (req, res) => {
+    const hours  = parseInt(req.query.hours) || 24;
+    const dbNow  = await getDBNow();
+    const cutoff = new Date(dbNow.getTime() - hours * 3600000).toISOString();
+
+    let docs = [];
+
+    // Try CouchDB first
+    if (accelerometerEventsDB) {
         try {
-          await nano.db.destroy(db.name);
-          await nano.db.create(db.name);
-          console.log(`[reset] Cleared DB: ${db.name}`);
+            const all = await accelerometerEventsDB.list({ include_docs: true });
+            docs = all.rows
+                .map(r => r.doc)
+                .filter(d => d && d.timestamp && d.timestamp >= cutoff && !d._id?.startsWith('_'))
+                .sort((a, b) => b.timestamp.localeCompare(a.timestamp)); // newest first
         } catch (e) {
           console.error(`[reset] Failed to clear ${db.name}:`, e.message);
         }
@@ -1062,17 +1436,12 @@ app.post("/api/reset", async (req, res) => {
       console.log("[reset] JSON fallback cleared");
     }
 
-    const zeroStats = {
-      total: 0,
-      highSeverity: 0,
-      medium: 0,
-      low: 0,
-      maxPeak: 0,
-      avgPeak: 0,
-      source: "reset",
-    };
-    io.emit("stats-update", zeroStats);
-    io.emit("display-reset", { saveToDb });
+    // Fallback to peaks_log.json
+    if (!docs.length) {
+        docs = peaksLog
+            .filter(p => p.timestamp >= cutoff)
+            .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    }
 
     console.log(`[reset] Complete — saveToDb=${saveToDb}`);
     res.json({

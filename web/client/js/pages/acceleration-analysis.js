@@ -96,10 +96,48 @@ async function loadAndRender() {
     console.log(`[analysis] Rendered ${data.length} rows`);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("[ANALYSIS] Simple working version loaded");
-    loadAndRender();
-    setInterval(loadAndRender, 10000);
+function exportReport() {
+    const classified = impacts
+        .map(i => ({ ...i, priority: getPriority(i.peak), nearestLimit: getNearestLimit(i.peak) }))
+        .filter(i => i.priority)
+        .sort((a, b) => b.peak - a.peak);
+
+    if (classified.length === 0) { alert('No data to export'); return; }
+
+    const headers = ['KM Location', 'GPS Coordinates', 'Peak (g)', 'Applied Threshold (g)', 'Peak Limit (g)', 'Priority Class', 'Speed (km/h)'];
+    const rows = classified.map(i => [
+        i.location,
+        `${i.lat.toFixed(6)}° N, ${i.lon.toFixed(6)}° E`,
+        i.peak.toFixed(1),
+        i.priority.threshold,
+        i.nearestLimit,
+        i.priority.class,
+        i.speed.toFixed(1)
+    ]);
+
+    const metadata = [
+        `Report Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })}`,
+        `Active Thresholds: P1:${thresholds.p1Min}-${thresholds.p1Max}g, P2:${thresholds.p2Min}-${thresholds.p2Max}g, P3:>${thresholds.p3Min}g`,
+        `Peak Limits: ${peakLimits.join(', ')}g`,
+        `Total Records: ${classified.length}`,
+        ''
+    ];
+
+    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+    const fullReport = metadata.join('\n') + csvContent;
+
+    const blob = new Blob([fullReport], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Acceleration_Analysis_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+}
+
+// Sync when configuration.html saves new values
+window.addEventListener('storage', e => {
+    if (e.key === RM_THRESHOLDS_KEY || e.key === RM_LIMITS_KEY) loadConfig();
 });
 
 window.exportReport = () => alert('Report exported!');
