@@ -1,23 +1,9 @@
-/* acceleration.js — DB-driven waveform, no Socket.IO */
+/* acceleration.js — DB-driven waveform, with database timestamp for last update (1s polling) */
 
 const API          = window.location.origin;
 const CHART_POINTS = 120; // seconds visible on chart
-const STALE_MS     = 10000; // sensor offline if no data for 10s
+const ONLINE_THRESHOLD_MS = 10000; // device considered online if last data ≤ 10s ago
 let   pollMinutes  = 2;    // window sent to API (matches time range btn)
-
-// ── Clock ──────────────────────────────────────────────────────────────────
-function updateTimestamp() {
-    const now = new Date();
-    document.getElementById('currentTimestamp').textContent =
-        now.toLocaleString('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', second: '2-digit',
-            hour12: false
-        });
-}
-setInterval(updateTimestamp, 1000);
-updateTimestamp();
 
 // ── Chart setup ───────────────────────────────────────────────────────────
 const channels = [
@@ -74,6 +60,56 @@ const mainChart = new Chart(ctx, {
     }
 });
 
+// ── Format timestamp from DB (handles ISO with/without offset) ────────────
+function formatISTDateTime(timestampStr) {
+    if (!timestampStr) return 'No data yet';
+    const date = new Date(timestampStr);
+    if (isNaN(date.getTime())) return 'Invalid timestamp';
+    const options = {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    };
+    return date.toLocaleString('en-IN', options);
+}
+
+// ── Fetch and update the last active timestamp from database (1s polling) ─
+async function fetchLastActiveTime() {
+    try {
+        const response = await fetch(`${API}/api/last-active`);
+        const data = await response.json();
+        const lastUpdateSpan = document.getElementById('lastUpdate');
+        if (!lastUpdateSpan) return;
+
+        if (data.lastActive) {
+            const lastTimestampStr = data.lastActive;
+            const lastDate = new Date(lastTimestampStr);
+            const ageMs = Date.now() - lastDate.getTime();
+            const isOnline = ageMs <= ONLINE_THRESHOLD_MS;
+
+            // Display formatted time
+            lastUpdateSpan.textContent = formatISTDateTime(lastTimestampStr);
+            // Colour: green if online, red if offline
+            lastUpdateSpan.style.color = isOnline ? '#22c55e' : '#ef4444';
+        } else {
+            lastUpdateSpan.textContent = 'No data yet';
+            lastUpdateSpan.style.color = '#ef4444';
+        }
+    } catch (err) {
+        console.error('Failed to fetch last active time:', err);
+        const lastUpdateSpan = document.getElementById('lastUpdate');
+        if (lastUpdateSpan) {
+            lastUpdateSpan.textContent = 'Error';
+            lastUpdateSpan.style.color = '#ef4444';
+        }
+    }
+}
+
 // ── Fetch from DB and update chart + metrics ───────────────────────────────
 async function fetchChannels() {
     try {
@@ -89,7 +125,6 @@ async function fetchChannels() {
             });
             mainChart.data.labels = Array(CHART_POINTS).fill('');
             mainChart.update('none');
-            document.getElementById('lastUpdate').textContent = 'No data';
             return;
         }
 
@@ -97,15 +132,8 @@ async function fetchChannels() {
         const slice  = data.slice(-CHART_POINTS);
         const pad    = CHART_POINTS - slice.length;
 
-        // Append 'Z' so JS treats bare ISO strings as UTC (server stores UTC without Z)
-        const toUtc = ts => new Date(ts.endsWith('Z') ? ts : ts + 'Z');
-
         const labels = [...Array(pad).fill(''), ...slice.map(pt =>
-            toUtc(pt.ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }))];
-
-        const now      = Date.now();
-        const latestTs = toUtc(slice[slice.length - 1].ts).getTime();
-        const ageSec   = Math.round((now - latestTs) / 1000);
+            new Date(pt.ts).toLocaleTimeString())];
 
         channels.forEach((ch, i) => {
             mainChart.data.datasets[i].data = [
@@ -128,26 +156,6 @@ async function fetchChannels() {
         mainChart.data.labels = labels;
         mainChart.update('none');
 
-        // Last seen badge — show actual date+time, colour by online status
-        const lastSeenStr = new Date(latestTs).toLocaleString('en-IN', {
-            timeZone: 'Asia/Kolkata',
-            day: '2-digit', month: '2-digit', year: 'numeric',
-            hour: '2-digit', minute: '2-digit', second: '2-digit',
-            hour12: false
-        });
-        fetch(`${API}/api/management/active-sensors`)
-            .then(r => r.json())
-            .then(s => {
-                const el = document.getElementById('lastUpdate');
-                el.textContent = lastSeenStr;
-                el.style.color = (s.online && s.online.length > 0) ? '#22c55e' : '#ef4444';
-            })
-            .catch(() => {
-                const el = document.getElementById('lastUpdate');
-                el.textContent = lastSeenStr;
-                el.style.color = '';
-            });
-
         // Data points count
         const dpEl = document.getElementById('dataPoints');
         if (dpEl) dpEl.textContent = data.length.toLocaleString();
@@ -169,4 +177,7 @@ window.setTimeRange = setTimeRange;
 
 // ── Start polling ──────────────────────────────────────────────────────────
 fetchChannels();
-setInterval(fetchChannels, 3000);
+setInterval(fetchChannels, 3000);          // chart updates every 3s
+
+fetchLastActiveTime();
+setInterval(fetchLastActiveTime, 1000);    // timestamp updates every 1s (real-time)
