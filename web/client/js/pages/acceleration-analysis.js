@@ -1,11 +1,9 @@
-/* acceleration-analysis.js — SIMPLE & WORKING VERSION
- * 
- * Last modified: Wed Mar 25 09:47:14 PM IST 2026
- * */
+/* acceleration-analysis.js */
 
 const SERVER = window.location.origin;
 
 let thresholds = { p1Min: 5, p1Max: 10, p2Min: 10, p2Max: 20, p3Min: 20 };
+let lastFetchedData = [];
 
 function loadThresholds() {
     const saved = localStorage.getItem('rm_thresholds');
@@ -16,10 +14,9 @@ function loadThresholds() {
 function getPriority(peakG) {
     if (peakG == null) return { class: '—', badge: '', threshold: '—', color: '#94a3b8' };
     const g = +peakG;
-
     if (g >= thresholds.p3Min) return { class: 'P3', badge: 'badge-p3', threshold: thresholds.p3Min, color: '#b91c1c' };
-    if (g >= thresholds.p2Min && g < thresholds.p2Max) return { class: 'P2', badge: 'badge-p2', threshold: thresholds.p2Min, color: '#c2410c' };
-    if (g >= thresholds.p1Min && g < thresholds.p1Max) return { class: 'P1', badge: 'badge-p1', threshold: thresholds.p1Min, color: '#b45309' };
+    if (g >= thresholds.p2Min) return { class: 'P2', badge: 'badge-p2', threshold: thresholds.p2Min, color: '#c2410c' };
+    if (g >= thresholds.p1Min) return { class: 'P1', badge: 'badge-p1', threshold: thresholds.p1Min, color: '#b45309' };
     return { class: '—', badge: '', threshold: '—', color: '#94a3b8' };
 }
 
@@ -68,7 +65,7 @@ function renderTable(data) {
     tbody.innerHTML = data.map(d => {
         const pri = getPriority(d.peak_g);
         const km = formatKM(d.distance_m);
-        const ts = new Date(d.timestamp).toLocaleString();
+        const ts = new Date(d.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
         const sensor = d.sensor || '—';
 
         return `
@@ -91,41 +88,39 @@ async function loadAndRender() {
 
     loadThresholds();
     const data = await fetchImpacts();
+    lastFetchedData = data;
     renderTable(data);
     renderThresholdsBar();
     console.log(`[analysis] Rendered ${data.length} rows`);
 }
 
 function exportReport() {
-    const classified = impacts
-        .map(i => ({ ...i, priority: getPriority(i.peak), nearestLimit: getNearestLimit(i.peak) }))
-        .filter(i => i.priority)
-        .sort((a, b) => b.peak - a.peak);
+    const data = lastFetchedData;
+    if (!data || data.length === 0) { alert('No data to export'); return; }
 
-    if (classified.length === 0) { alert('No data to export'); return; }
-
-    const headers = ['KM Location', 'GPS Coordinates', 'Peak (g)', 'Applied Threshold (g)', 'Peak Limit (g)', 'Priority Class', 'Speed (km/h)'];
-    const rows = classified.map(i => [
-        i.location,
-        `${i.lat.toFixed(6)}° N, ${i.lon.toFixed(6)}° E`,
-        i.peak.toFixed(1),
-        i.priority.threshold,
-        i.nearestLimit,
-        i.priority.class,
-        i.speed.toFixed(1)
-    ]);
+    const headers = ['KM Location', 'Timestamp', 'Peak (g)', 'Threshold (g)', 'Priority Class', 'Sensor'];
+    const rows = data.map(d => {
+        const pri = getPriority(d.peak_g);
+        const km = formatKM(d.distance_m);
+        const ts = new Date(d.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+        return [
+            `KM ${km}`,
+            ts,
+            (+d.peak_g || 0).toFixed(3),
+            pri.threshold,
+            pri.class,
+            d.sensor || '—'
+        ].join(',');
+    });
 
     const metadata = [
         `Report Generated: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })}`,
-        `Active Thresholds: P1:${thresholds.p1Min}-${thresholds.p1Max}g, P2:${thresholds.p2Min}-${thresholds.p2Max}g, P3:>${thresholds.p3Min}g`,
-        `Peak Limits: ${peakLimits.join(', ')}g`,
-        `Total Records: ${classified.length}`,
+        `Thresholds: P1:${thresholds.p1Min}-${thresholds.p1Max}g, P2:${thresholds.p2Min}-${thresholds.p2Max}g, P3:>${thresholds.p3Min}g`,
+        `Total Records: ${data.length}`,
         ''
     ];
 
-    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const fullReport = metadata.join('\n') + csvContent;
-
+    const fullReport = [...metadata, headers.join(','), ...rows].join('\n');
     const blob = new Blob([fullReport], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -135,9 +130,11 @@ function exportReport() {
     window.URL.revokeObjectURL(url);
 }
 
-// Sync when configuration.html saves new values
+window.exportReport = exportReport;
+
+// Reload if thresholds change in another tab
 window.addEventListener('storage', e => {
-    if (e.key === RM_THRESHOLDS_KEY || e.key === RM_LIMITS_KEY) loadConfig();
+    if (e.key === 'rm_thresholds') loadAndRender();
 });
 
-window.exportReport = () => alert('Report exported!');
+loadAndRender();

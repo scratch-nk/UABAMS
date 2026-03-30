@@ -7,13 +7,18 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { DateTime } = require("luxon"); // make sure luxon is installed!
+const { DateTime } = require("luxon"); 
 
 // ── Timezone configuration (change as needed) ─────────────────────────────
 const TIMEZONE = "Asia/Kolkata";
 
 function getTimezoneTimestamp() {
 return DateTime.now().setZone(TIMEZONE).toFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
+}
+
+// Returns a cutoff timestamp in IST format (no Z) to compare against stored timestamps
+function getISTCutoff(msAgo) {
+    return DateTime.now().setZone(TIMEZONE).minus(msAgo).toFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
 }
 
 // ── Persistent JSON fallback ──────────────────────────────────────────────
@@ -154,6 +159,9 @@ const initCouchDB = async () => {
 let lastDataTimestamp = null;
 let mqttConnected = false;
 let mqttClient = null; // will be created after DB is ready
+
+// In-memory sensor tracking — updated on every MQTT message
+const sensorLastSeen = {}; // { left: Date.now(), right: Date.now() }
 
 // Health parser
 function parseHealthMessage(msgStr) {
@@ -562,7 +570,7 @@ app.get("/api/acceleration/channels", async (req, res) => {
 
 app.get("/api/management/sensor-chart-recent", async (_req, res) => {
   try {
-    const cutoff = new Date(Date.now() - 2 * 60000).toISOString();
+    const cutoff = getISTCutoff(2 * 60000);
     const all = await realtimeDataDB.find({
       selector: { timestamp: { $gte: cutoff } },
       fields: ["sensor", "gForce", "timestamp"],
@@ -608,40 +616,25 @@ app.get("/api/management/uptime", async (req, res) => {
   }
 });
 
-app.get("/api/management/active-sensors", async (req, res) => {
-  try {
-    const now = Date.now();
-    const cutoff24h = new Date(now - 24 * 3600000).toISOString();
-    const cutoff10s = new Date(now - 10 * 1000).toISOString();
-    const all = await realtimeDataDB.find({
-      selector: { timestamp: { $gte: cutoff24h } },
-      fields: ["sensor", "timestamp"],
-      limit: 10000,
-    });
-    const lastSeen = {};
-    for (const doc of all.docs) {
-      if (!lastSeen[doc.sensor] || doc.timestamp > lastSeen[doc.sensor])
-        lastSeen[doc.sensor] = doc.timestamp;
-    }
-    const sensors = Object.keys(lastSeen);
-    const onlineSensors = sensors.filter((s) => lastSeen[s] >= cutoff10s);
-    const knownSensors = sensors.filter((s) => lastSeen[s] < cutoff10s);
-    res.json({
-      count: onlineSensors.length,
-      total_known: sensors.length,
-      online: onlineSensors,
-      last_known: knownSensors,
-      last_seen: lastSeen,
-    });
-  } catch (e) {
-    console.error("/api/management/active-sensors error:", e.message);
-    res.status(500).json({ error: e.message });
-  }
+app.get("/api/management/active-sensors", (_req, res) => {
+  const now = Date.now();
+  const sensors = Object.keys(sensorLastSeen);
+  const onlineSensors = sensors.filter((s) => now - sensorLastSeen[s] <= 5000);
+  const knownSensors  = sensors.filter((s) => now - sensorLastSeen[s] >  5000);
+  const lastSeenTs = {};
+  sensors.forEach(s => lastSeenTs[s] = new Date(sensorLastSeen[s]).toISOString());
+  res.json({
+    count: onlineSensors.length,
+    total_known: sensors.length,
+    online: onlineSensors,
+    last_known: knownSensors,
+    last_seen: lastSeenTs,
+  });
 });
 
 app.get("/api/management/active-alerts", async (req, res) => {
   try {
-    const cutoff = new Date(Date.now() - 24 * 3600000).toISOString();
+    const cutoff = getISTCutoff(24 * 3600000);
     const recent = peaksLog.filter((p) => p.timestamp >= cutoff);
     const high = recent.filter((p) => p.severity === "HIGH").length;
     const medium = recent.filter((p) => p.severity === "MEDIUM").length;
@@ -664,9 +657,8 @@ app.get("/api/management/active-alerts", async (req, res) => {
 
 app.get("/api/management/system-health", async (req, res) => {
   try {
-    const now = Date.now();
-    const cutoff6h = new Date(now - 6 * 3600000).toISOString();
-    const cutoff5m = new Date(now - 5 * 60000).toISOString();
+    const cutoff6h = getISTCutoff(6 * 3600000);
+    const cutoff5m = getISTCutoff(5 * 60000);
     const all = await realtimeDataDB.find({
       selector: { timestamp: { $gte: cutoff6h } },
       fields: ["sensor", "gForce", "timestamp"],
@@ -861,6 +853,9 @@ async function startMqtt() {
           ? "left"
           : null;
       if (!sensorSide) return;
+
+      // Track last seen time in memory
+      sensorLastSeen[sensorSide] = Date.now();
 
       // Parse axes
       const ax = msgStr.match(/Ax\s*:\s*([+-]?\d+\.?\d*)/i);

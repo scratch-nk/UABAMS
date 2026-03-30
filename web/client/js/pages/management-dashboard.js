@@ -106,38 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-<<<<<<< HEAD
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-=======
 // ── Helpers ────────────────────────────────────────────────────────────────
 function timeAgo(isoStr) {
     const diffMs  = Date.now() - new Date(isoStr).getTime();
@@ -170,17 +138,20 @@ async function fetchUptime() {
 async function fetchActiveSensors() {
     try {
         const data = await fetch(`${API}/api/management/active-sensors`).then(r => r.json());
-        document.getElementById('kpi-sensors').textContent = data.count;
+        const el    = document.getElementById('kpi-sensors');
+        const subEl = document.getElementById('kpi-sensors-sub');
+        el.textContent = data.count;
         if (data.online.length > 0) {
+            el.style.color = '#22c55e';
             const offline = data.last_known.length ? ` · ${data.last_known.join(',')} offline` : '';
-            document.getElementById('kpi-sensors-sub').textContent = data.online.join(', ') + ' active' + offline;
+            subEl.textContent = data.online.join(', ') + ' active' + offline;
         } else if (data.last_known.length > 0) {
-            const latestTs = data.last_known.reduce((best, s) =>
-                data.last_seen[s] > best ? data.last_seen[s] : best, '');
-            document.getElementById('kpi-sensors-sub').textContent =
-                `${data.last_known.join(', ')} · last seen ${timeAgo(latestTs)}`;
+            el.style.color = '#ef4444';
+            const latestTs = Object.values(data.last_seen).sort().pop() || '';
+            subEl.textContent = `${data.last_known.join(', ')} · last seen ${timeAgo(latestTs)}`;
         } else {
-            document.getElementById('kpi-sensors-sub').textContent = 'No sensor data';
+            el.style.color = '#ef4444';
+            subEl.textContent = 'No sensor data';
         }
     } catch (e) { console.error('active-sensors fetch error:', e); }
 }
@@ -216,7 +187,8 @@ async function fetchChartFromDB() {
         const data = await fetch(`${API}/api/management/sensor-chart-recent`).then(r => r.json());
 
         const now       = Date.now();
-        const windowCut = new Date(now - CHART_WINDOW_MS).toISOString().slice(0, 19);
+        // IST offset (+5:30 = 19800000ms) to match server's IST-stored timestamps
+        const windowCut = new Date(now - CHART_WINDOW_MS + 19800000).toISOString().slice(0, 19);
 
         // Only keep points within the 2-minute window
         const windowed = data.filter(pt => pt.ts >= windowCut);
