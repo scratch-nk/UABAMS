@@ -1,55 +1,599 @@
-/* acceleration-km.js — KM-wise sections with checkbox-driven tab toggle */
+/* acceleration-km.js – Frontend‑side KM report with 5-second freeze on KM completion */
 
+'use strict';
+
+const POLL_MS = 5000;
+const RECORDS_PER_BLOCK = 50;
+const BLOCKS_PER_KM = 7;
+const RECORDS_PER_KM = RECORDS_PER_BLOCK * BLOCKS_PER_KM;
+const FREEZE_MS = 5000;  // show completed KM for 5 seconds
+
+let isLive = false;
+let lastCard = null;
+let allDocs = [];
+let todayDocs = [];
+let freezeUntil = 0;           // timestamp until which we freeze the display
+let lastCompletedKms = 0;      // last known completedKms value to detect change
+
+// Tab / Section toggle (unchanged)
 let activeSections = { blocks: true, peakDist: false, worstPeaks: false };
 
-// Load thresholds (used for future dynamic rendering)
-let thresholds = { ...DEFAULT_THRESHOLDS };
+function toggleSection(section) {
+    const map = {
+        blocks:     { chk: 'blocksCheck',     tab: 'blocksTab'     },
+        peakDist:   { chk: 'peakDistCheck',   tab: 'peakDistTab'   },
+        worstPeaks: { chk: 'worstPeaksCheck', tab: 'worstPeaksTab' },
+    };
+    const { chk, tab } = map[section];
+    const el = document.getElementById(chk);
+    if (!el) return;
+    el.checked = !el.checked;
+    activeSections[section] = el.checked;
+    document.getElementById(tab)?.classList.toggle('active', el.checked);
+    if (lastCard && !(freezeUntil > Date.now())) renderCard(lastCard);
+}
+window.toggleSection = toggleSection;
 
-function loadThresholds() {
-    thresholds = loadStoredThresholds();
+// Format helpers (unchanged)
+function fmt(v, d = 2)  { return (v == null || isNaN(v)) ? '—' : (+v).toFixed(d); }
+function rmsClass(v) {
+    if (v == null) return '';
+    if (v >= 0.55) return 'value-high';
+    if (v >= 0.40) return 'value-medium';
+    return '';
+}
+function peakClass(v) {
+    if (v == null) return '';
+    if (v >= 10) return 'value-high';
+    if (v >= 5)  return 'value-medium';
+    return 'value-low';
 }
 
-function toggleSection(section) {
-    const checkboxes = {
-        blocks:     document.getElementById('blocksCheck'),
-        peakDist:   document.getElementById('peakDistCheck'),
-        worstPeaks: document.getElementById('worstPeaksCheck')
+// Computation helpers (unchanged)
+function avg(arr) {
+    const valid = arr.filter(v => v != null && !isNaN(v));
+    return valid.length ? valid.reduce((s, x) => s + x, 0) / valid.length : null;
+}
+function computeBlock(docs, blkIdx) {
+    const left  = docs.filter(d => d.device_id === 'left');
+    const right = docs.filter(d => d.device_id === 'right');
+    const pick  = (arr, f) => arr.map(d => d[f]).filter(v => v != null);
+    return {
+        label: `BLK${blkIdx + 1}`,
+        left: {
+            rmsV: avg(pick(left, 'rmsV')),
+            rmsL: avg(pick(left, 'rmsL')),
+            sdV:  avg(pick(left, 'sdV')),
+            sdL:  avg(pick(left, 'sdL')),
+        },
+        right: {
+            rmsV: avg(pick(right, 'rmsV')),
+            rmsL: avg(pick(right, 'rmsL')),
+            sdV:  avg(pick(right, 'sdV')),
+            sdL:  avg(pick(right, 'sdL')),
+        },
     };
-    const tabs = {
-        blocks:     document.getElementById('blocksTab'),
-        peakDist:   document.getElementById('peakDistTab'),
-        worstPeaks: document.getElementById('worstPeaksTab')
+}
+
+function computePeakDist(docs) {
+    const out = {
+        left:  { V: { P1:0, P2:0, P3:0 }, L: { P1:0, P2:0, P3:0 } },
+        right: { V: { P1:0, P2:0, P3:0 }, L: { P1:0, P2:0, P3:0 } },
     };
-    const sections = {
-        blocks:     document.getElementById('blocksSection'),
-        peakDist:   document.getElementById('peakDistSection'),
-        worstPeaks: document.getElementById('worstPeaksSection')
+    const getPClass = (g) => {
+        if (g == null || isNaN(g)) return null;
+        g = Math.abs(g);
+        if (g >= 20) return 'P3';
+        if (g >= 10) return 'P2';
+        if (g >= 5)  return 'P1';
+        return null;
     };
+    for (const d of docs) {
+        const side = d.device_id === 'right' ? 'right' : 'left';
+        const pV = getPClass(d.z_axis);
+        const pL = getPClass(d.x_axis);
+        if (pV) out[side].V[pV]++;
+        if (pL) out[side].L[pL]++;
+    }
+    return out;
+}
 
-    checkboxes[section].checked = !checkboxes[section].checked;
-    activeSections[section] = checkboxes[section].checked;
+function computeWorstPeaks(docs) {
+    const b = { 'L-LAT': [], 'L-VERT': [], 'R-LAT': [], 'R-VERT': [] };
+    for (const d of docs) {
+        const side = d.device_id === 'right' ? 'right' : 'left';
+        const vert = d.z_axis != null ? Math.abs(d.z_axis) : null;
+        const lat  = d.x_axis != null ? Math.abs(d.x_axis) : null;
+        if (side === 'left') {
+            if (vert != null) b['L-VERT'].push(vert);
+            if (lat != null)  b['L-LAT'].push(lat);
+        } else {
+            if (vert != null) b['R-VERT'].push(vert);
+            if (lat != null)  b['R-LAT'].push(lat);
+        }
+    }
+    const top10 = arr => arr.sort((a,b)=>b-a).slice(0,10).map(v=>+v.toFixed(1));
+    return {
+        'L-LAT':  top10(b['L-LAT']),
+        'L-VERT': top10(b['L-VERT']),
+        'R-LAT':  top10(b['R-LAT']),
+        'R-VERT': top10(b['R-VERT']),
+    };
+}
 
-    tabs[section].classList.toggle('active', activeSections[section]);
+function buildCard(docs, kmIndex, hwLive) {
+    const isPartial = docs.length < RECORDS_PER_KM;
+    const doneBlocks = Math.floor(docs.length / RECORDS_PER_BLOCK);
+    const blocks = [];
+    for (let b = 0; b < BLOCKS_PER_KM; b++) {
+        if (b < doneBlocks) {
+            const start = b * RECORDS_PER_BLOCK;
+            const end   = start + RECORDS_PER_BLOCK;
+            blocks.push(computeBlock(docs.slice(start, end), b));
+        } else if (hwLive) {
+            blocks.push({ label: `BLK${b+1}`, pending: true });
+        } else {
+            const empty = { rmsV: null, rmsL: null, sdV: null, sdL: null };
+            blocks.push({ label: `BLK${b+1}`, left: empty, right: empty });
+        }
+    }
+    return {
+        kmFrom:        kmIndex,
+        kmTo:          kmIndex + 1,
+        recordsSoFar:  docs.length,
+        isPartial,
+        lastTimestamp: docs[docs.length-1]?.timestamp ?? null,
+        blocks,
+        peakDist:      computePeakDist(docs),
+        worstPeaks:    computeWorstPeaks(docs),
+    };
+}
 
-    for (const key in sections) {
-        sections[key].style.display = activeSections[key] ? 'block' : 'none';
+// Render functions (unchanged)
+function renderBlocksTable(blocks) {
+    if (!blocks?.length) return '<p class="no-data">No block data yet.</p>';
+    const rows = blocks.map(blk => {
+        if (blk.pending) {
+            return `<tr class="pending-row">
+                <td>${blk.label}</td>
+                <td colspan="8" style="color:#94a3b8;font-style:italic;font-size:11px">Collecting…</td>
+            </tr>`;
+        }
+        const l = blk.left || {}, r = blk.right || {};
+        return `<tr>
+            <td>${blk.label}</td>
+            <td class="${rmsClass(l.rmsV)}">${fmt(l.rmsV)}</td>
+            <td class="${rmsClass(l.rmsL)}">${fmt(l.rmsL)}</td>
+            <td class="sd-value">${fmt(l.sdV,3)}</td>
+            <td class="sd-value">${fmt(l.sdL,3)}</td>
+            <td class="${rmsClass(r.rmsV)}">${fmt(r.rmsV)}</td>
+            <td class="${rmsClass(r.rmsL)}">${fmt(r.rmsL)}</td>
+            <td class="sd-value">${fmt(r.sdV,3)}</td>
+            <td class="sd-value">${fmt(r.sdL,3)}</td>
+        </tr>`;
+    }).join('');
+    return `<div class="table-container">
+        <table>
+            <thead>
+                <tr><th rowspan="3">LOC</th><th colspan="4">LEFT</th><th colspan="4">RIGHT</th></tr>
+                <tr><th colspan="2">RMS</th><th colspan="2">SD</th><th colspan="2">RMS</th><th colspan="2">SD</th></tr>
+                <tr><th>V</th><th>L</th><th>V</th><th>L</th><th>V</th><th>L</th><th>V</th><th>L</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+function renderPeakDistTable(peakDist) {
+    if (!peakDist) return '<p class="no-data">No distribution data yet.</p>';
+    const l = peakDist.left, r = peakDist.right;
+    const bandRow = band => {
+        const cls = band.toLowerCase();
+        return `<tr>
+            <td><span class="badge badge-${cls}">${band}</span></td>
+            <td class="count-badge count-${cls}">${l.V[band]||0}</td>
+            <td class="count-badge count-${cls}">${l.L[band]||0}</td>
+            <td class="count-badge count-${cls}">${r.V[band]||0}</td>
+            <td class="count-badge count-${cls}">${r.L[band]||0}</td>
+        </tr>`;
+    };
+    return `<div class="table-container">
+        <table>
+            <thead><tr><th rowspan="2">BANDS</th><th colspan="2">LEFT</th><th colspan="2">RIGHT</th></tr>
+            <tr><th>V</th><th>L</th><th>V</th><th>L</th></tr></thead>
+            <tbody>${bandRow('P1')}${bandRow('P2')}${bandRow('P3')}</tbody>
+        </table>
+    </div>`;
+}
+
+function renderWorstPeaksTable(worstPeaks) {
+    if (!worstPeaks) return '<p class="no-data">No peak data yet.</p>';
+
+    const params = ['L-LAT', 'L-VERT', 'R-LAT', 'R-VERT'];
+
+    const rows = params.map(param => {
+        const vals = worstPeaks[param] || [];
+        const cells = Array.from({length: 10}, (_, i) => {
+            const v = vals[i];
+            return v == null 
+                ? `<td class="peak-meter">—</td>` 
+                : `<td class="peak-meter ${peakClass(v)}">${fmt(v, 1)}</td>`;
+        }).join('');
+
+        return `<tr>
+            <td><strong>${param}</strong></td>
+            ${cells}
+        </tr>`;
+    }).join('');
+
+    return `
+    <div class="table-container worst-peaks-table">
+        <table>
+            <thead>
+                <tr>
+                    <th>Parameter</th>
+                    <th>1</th><th>2</th><th>3</th><th>4</th><th>5</th>
+                    <th>6</th><th>7</th><th>8</th><th>9</th><th>10</th>
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+function renderCard(data) {
+    const container = document.getElementById('km-container');
+    if (!container) return;
+    const bD = activeSections.blocks     ? 'block' : 'none';
+    const pD = activeSections.peakDist   ? 'block' : 'none';
+    const wD = activeSections.worstPeaks ? 'block' : 'none';
+    const updatedStr = data.lastTimestamp ? new Date(data.lastTimestamp).toLocaleTimeString() : 'Just now';
+
+    let badge = '';
+    if (data.historical) {
+        badge = `<span class="historical-badge"><i class="fas fa-history"></i> Last Session</span>`;
+    } else if (data.isPartial && isLive) {
+        badge = `<span class="live-badge"><i class="fas fa-circle blink"></i> LIVE &nbsp;<span style="font-size:11px">${data.recordsSoFar}/${RECORDS_PER_KM}</span></span>`;
+    }
+
+    container.innerHTML = `
+    <div class="km-block${data.isPartial && isLive ? ' km-live' : ''}">
+        <div class="km-header">
+            <div class="km-header-left">
+                <span><i class="fas fa-map-pin"></i> Km From: ${data.kmFrom}</span>
+                <span><i class="fas fa-map-pin"></i> Km To: ${data.kmTo}</span>
+                ${badge}
+            </div>
+            <div class="km-header-right">
+                <i class="fas fa-clock"></i> Updated: ${updatedStr}
+            </div>
+        </div>
+        <div class="section" style="display:${bD}">
+            <div class="section-title"><i class="fas fa-cubes"></i> Blocks</div>
+            ${renderBlocksTable(data.blocks)}
+        </div>
+        <div class="section" style="display:${pD}">
+            <div class="section-title"><i class="fas fa-chart-pie"></i> Peak Distribution</div>
+            ${renderPeakDistTable(data.peakDist)}
+        </div>
+        <div class="section" style="display:${wD}">
+            <div class="section-title"><i class="fas fa-chart-line"></i> Worst Peaks</div>
+            ${renderWorstPeaksTable(data.worstPeaks)}
+        </div>
+    </div>`;
+}
+
+// Status helpers
+function setStatus(live) {
+    isLive = live;
+    const dot    = document.getElementById('hw-status');
+    const label  = document.getElementById('hw-status-label');
+    const banner = document.getElementById('offline-banner');
+    if (dot)    dot.className        = live ? 'status-dot live' : 'status-dot offline';
+    if (label)  label.textContent    = live ? 'Live' : 'Offline';
+    if (banner) banner.style.display = live ? 'none' : 'flex';
+}
+
+function setToolbarCount(n) {
+    const el = document.querySelector('.toolbar-label');
+    if (el) el.textContent = `Recorded Accelerations Km (${n})`;
+}
+
+// Data processing
+function getTodayStart() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function isSameDate(timestamp, dateStr) {
+    return timestamp.startsWith(dateStr);
+}
+
+async function fetchRawData() {
+    try {
+        const res = await fetch('/api/monitoring/all');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        data.sort((a,b) => a.timestamp.localeCompare(b.timestamp));
+        return data;
+    } catch (err) {
+        console.error('[km] fetch raw error:', err);
+        return [];
     }
 }
 
-window.onload = function () {
-    loadThresholds();
+async function fetchLiveStatus() {
+    try {
+        const res = await fetch('/api/realtime/status');
+        const data = await res.json();
+        return data.receiving_data === true;
+    } catch (err) {
+        return false;
+    }
+}
 
-    document.getElementById('blocksCheck').checked    = true;
-    document.getElementById('peakDistCheck').checked  = false;
+async function updateReport() {
+    // 1. Fetch raw data
+    allDocs = await fetchRawData();
+    if (!allDocs.length) {
+        document.getElementById('km-container').innerHTML = `
+            <div class="no-data-banner">
+                <i class="fas fa-satellite-dish"></i>
+                <p>No records in database yet.</p>
+                <p style="color:#94a3b8;font-size:12px">Connect hardware to begin.</p>
+            </div>`;
+        setStatus(false);
+        return;
+    }
+
+    // 2. Determine today's date and filter today's docs
+    const todayStart = getTodayStart();
+    todayDocs = allDocs.filter(d => isSameDate(d.timestamp, todayStart));
+    const hasTodayData = todayDocs.length > 0;
+
+    // 3. Fetch hardware liveness
+    const hwLive = await fetchLiveStatus();
+
+    // Helper to compute and render a card (respecting freeze)
+    let sessionDocs, historical, kmIndexOffset;
+
+    if (hasTodayData) {
+        // Use today's data for live session
+        sessionDocs = todayDocs;
+        historical = false;
+        const completedKms = Math.floor(sessionDocs.length / RECORDS_PER_KM);
+
+        // Detect if a new KM was completed
+        if (completedKms > lastCompletedKms) {
+            // New KM completed – freeze for 5 seconds
+            freezeUntil = Date.now() + FREEZE_MS;
+        }
+        lastCompletedKms = completedKms;
+
+        // If we are in freeze period, do not update the card (keep last completed card)
+        if (freezeUntil > Date.now()) {
+            // Still frozen – do nothing (lastCard already shows the completed KM)
+            // But we still need to update status and toolbar count
+            setStatus(hwLive);
+            setToolbarCount(completedKms);
+            return;
+        }
+
+        // Not frozen – proceed to update card
+        if (hwLive) {
+            const partialStart = completedKms * RECORDS_PER_KM;
+            const partialDocs = sessionDocs.slice(partialStart);
+            const card = buildCard(partialDocs, completedKms, true);
+            card.historical = false;
+            setStatus(hwLive);
+            setToolbarCount(completedKms);
+            lastCard = card;
+            renderCard(card);
+        } else {
+            // Offline but today has data: show last completed KM if any, else partial
+            if (completedKms > 0) {
+                const lastKmStart = (completedKms - 1) * RECORDS_PER_KM;
+                const lastKmDocs = sessionDocs.slice(lastKmStart, lastKmStart + RECORDS_PER_KM);
+                const card = buildCard(lastKmDocs, completedKms - 1, false);
+                card.historical = false;
+                setStatus(hwLive);
+                setToolbarCount(completedKms);
+                lastCard = card;
+                renderCard(card);
+            } else {
+                const card = buildCard(sessionDocs, 0, false);
+                card.historical = false;
+                setStatus(hwLive);
+                setToolbarCount(0);
+                lastCard = card;
+                renderCard(card);
+            }
+        }
+        return;
+    }
+
+    // 4. No data today → fallback to the most recent date that has data
+    const lastDoc = allDocs[allDocs.length - 1];
+    const lastDate = lastDoc.timestamp.slice(0, 10);
+    const prevDayDocs = allDocs.filter(d => isSameDate(d.timestamp, lastDate));
+    const totalPrevRecords = prevDayDocs.length;
+    const completedKmsPrev = Math.floor(totalPrevRecords / RECORDS_PER_KM);
+
+    if (completedKmsPrev > 0) {
+        const startIdx = (completedKmsPrev - 1) * RECORDS_PER_KM;
+        const endIdx = completedKmsPrev * RECORDS_PER_KM;
+        const lastKmDocs = prevDayDocs.slice(startIdx, endIdx);
+        const card = buildCard(lastKmDocs, completedKmsPrev - 1, false);
+        card.historical = true;
+        setStatus(hwLive);
+        setToolbarCount(completedKmsPrev);
+        lastCard = card;
+        renderCard(card);
+    } else {
+        const card = buildCard(prevDayDocs, 0, false);
+        card.historical = true;
+        setStatus(hwLive);
+        setToolbarCount(0);
+        lastCard = card;
+        renderCard(card);
+    }
+}
+
+// CSV Export (unchanged)
+function exportCSV() {
+    if (!allDocs || allDocs.length === 0) {
+        alert("No data available in the database yet.");
+        return;
+    }
+
+    let selectedDate = getTodayStart();   // default = today
+
+    // Ask user for date (optional)
+    const userDate = prompt(
+        "Enter date for report (DD-MM-YYYY)\n\nLeave blank for latest available day.", 
+        selectedDate
+    );
+
+    if (userDate && userDate.trim() !== "") {
+        selectedDate = userDate.trim();
+    }
+
+    // Filter documents for the selected date
+    const filteredDocs = allDocs.filter(d => d.timestamp.startsWith(selectedDate));
+
+    if (filteredDocs.length === 0) {
+        alert(`No data found for date: ${selectedDate}\n\nTrying the most recent day with data...`);
+        
+        // Fallback: find the most recent date that has data
+        const dates = [...new Set(allDocs.map(d => d.timestamp.slice(0,10)))].sort().reverse();
+        if (dates.length === 0) {
+            alert("No data available.");
+            return;
+        }
+        selectedDate = dates[0];
+        const fallbackDocs = allDocs.filter(d => d.timestamp.startsWith(selectedDate));
+        
+        if (fallbackDocs.length === 0) {
+            alert("No data available.");
+            return;
+        }
+        generateFullDayCSV(fallbackDocs, selectedDate);
+        return;
+    }
+
+    generateFullDayCSV(filteredDocs, selectedDate);
+}
+
+// Helper function to generate the actual CSV
+function generateFullDayCSV(docsForDay, reportDate) {
+    if (docsForDay.length === 0) return;
+
+    const rows = [];
+
+    // Report Header
+    rows.push("RailMonitor - Full Day KM Wise Acceleration Report");
+    rows.push(`Date,${reportDate}`);
+    rows.push(`Total Records,${docsForDay.length}`);
+    rows.push(`Generated On,${new Date().toLocaleString()}`);
+    rows.push("");
+
+    const totalKms = Math.ceil(docsForDay.length / RECORDS_PER_KM);
+
+    for (let km = 0; km < totalKms; km++) {
+        const startIdx = km * RECORDS_PER_KM;
+        const endIdx   = Math.min(startIdx + RECORDS_PER_KM, docsForDay.length);
+        const kmDocs   = docsForDay.slice(startIdx, endIdx);
+
+        const card = buildCard(kmDocs, km, false);   // false = not live
+
+        // KM Header
+        rows.push(`=== KM ${card.kmFrom} TO ${card.kmTo} ===`);
+        rows.push("");
+
+        // BLOCKS
+        rows.push("BLOCKS SUMMARY");
+        rows.push("LOC,Left RMS V,Left RMS L,Left SD V,Left SD L,Right RMS V,Right RMS L,Right SD V,Right SD L");
+
+        card.blocks.forEach(blk => {
+            if (blk.pending) return;
+            const l = blk.left || {};
+            const r = blk.right || {};
+            rows.push([
+                blk.label,
+                fmt(l.rmsV) || '—',
+                fmt(l.rmsL) || '—',
+                fmt(l.sdV, 3) || '—',
+                fmt(l.sdL, 3) || '—',
+                fmt(r.rmsV) || '—',
+                fmt(r.rmsL) || '—',
+                fmt(r.sdV, 3) || '—',
+                fmt(r.sdL, 3) || '—'
+            ].join(','));
+        });
+        rows.push("");
+
+        // PEAK DISTRIBUTION
+        rows.push("PEAK DISTRIBUTION");
+        rows.push("Band,Left Vertical (V),Left Lateral (L),Right Vertical (V),Right Lateral (L)");
+
+        const pd = card.peakDist || { left: { V: {}, L: {} }, right: { V: {}, L: {} } };
+        ['P1','P2','P3'].forEach(band => {
+            rows.push([
+                band,
+                pd.left.V[band] || 0,
+                pd.left.L[band] || 0,
+                pd.right.V[band] || 0,
+                pd.right.L[band] || 0
+            ].join(','));
+        });
+        rows.push("");
+
+        // WORST PEAKS
+        rows.push("WORST PEAKS (Top 10)");
+        rows.push("Parameter,1,2,3,4,5,6,7,8,9,10");
+
+        const wp = card.worstPeaks || {};
+        ['L-LAT','L-VERT','R-LAT','R-VERT'].forEach(param => {
+            const vals = (wp[param] || []).map(v => fmt(v,1));
+            while (vals.length < 10) vals.push('—');
+            rows.push([param, ...vals].join(','));
+        });
+
+        rows.push("");
+        rows.push("");   // separator between KMs
+    }
+
+    // Download
+    const csvContent = rows.join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `KM_Report_${reportDate}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+window.exportCSV = exportCSV;
+
+// Polling
+async function poll() {
+    await updateReport();
+}
+
+// Initialise
+window.onload = async function () {
+    document.getElementById('blocksCheck').checked = true;
+    document.getElementById('peakDistCheck').checked = false;
     document.getElementById('worstPeaksCheck').checked = false;
-
-    document.getElementById('blocksSection').style.display    = 'block';
-    document.getElementById('peakDistSection').style.display  = 'none';
-    document.getElementById('worstPeaksSection').style.display = 'none';
-
     document.getElementById('blocksTab').classList.add('active');
     document.getElementById('peakDistTab').classList.remove('active');
     document.getElementById('worstPeaksTab').classList.remove('active');
-};
 
-window.toggleSection = toggleSection;
+    await poll();
+    setInterval(poll, POLL_MS);
+};

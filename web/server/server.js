@@ -585,6 +585,38 @@ app.get("/api/management/sensor-chart-recent", async (_req, res) => {
   }
 });
 
+app.get('/api/monitoring/all', async (req, res) => {
+  try {
+    if (!monitoringDataDB || !dbReady) {
+      return res.status(503).json({ error: 'Database not ready' });
+    }
+
+    // CouchDB list gives us all docs; descending=false = oldest-first
+    const result = await monitoringDataDB.list({
+      include_docs: true,
+      descending:   false,
+      limit:        100000,
+    });
+
+    const docs = result.rows
+      .map(r => r.doc)
+      .filter(d =>
+        d &&
+        d.timestamp &&
+        d.device_id &&
+        !d._id.startsWith('_')
+      );
+
+    // Sort ascending by timestamp (belt-and-suspenders — list order can vary)
+    docs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    res.json(docs);
+  } catch (err) {
+    console.error('/api/monitoring/all error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/management/uptime", async (req, res) => {
   const hours = 24;
   try {
