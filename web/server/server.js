@@ -52,7 +52,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client')));
 
 // ── CouchDB setup + index creation ───────────────────────────────────────
-let accelerometerEventsDB, monitoringDataDB, realtimeDataDB;
+let accelerometerEventsDB, monitoringDataDB, realtimeDataDB, gpsDB;
 
 async function ensureIndex(db, fields, name) {
     try {
@@ -81,6 +81,12 @@ const initCouchDB = async () => {
         try { await nano.db.get('realtime_data'); }
         catch (e) { await nano.db.create('realtime_data'); console.log('Created realtime_data'); }
         realtimeDataDB = nano.use('realtime_data');
+
+        // rm_gps — create if missing
+        try { await nano.db.get('rm_gps'); }
+        catch (e) { await nano.db.create('rm_gps'); console.log('Created rm_gps'); }
+        gpsDB = nano.use('rm_gps');
+        await ensureIndex(gpsDB, ['timestamp'], 'idx-timestamp');
 
         // ── Create Mango indexes so .find() queries actually work ──────────
         // Without these, CouchDB does a full scan which can fail or return
@@ -515,12 +521,12 @@ app.get('/api/acceleration/channels', async (req, res) => {
 // Last 2 min of per-sensor readings for the rolling chart (stale = empty)
 app.get('/api/management/sensor-chart-recent', async (_req, res) => {
     try {
-        const dbNow  = await getDBNow();
-        const cutoff = new Date(dbNow.getTime() - 2 * 60000).toISOString();
+        const cutoff = new Date(Date.now() - 2 * 60000).toISOString();
         const all    = await realtimeDataDB.find({
-            selector: { timestamp: { $gte: cutoff } },
-            fields:   ['sensor', 'gForce', 'timestamp'],
-            limit:    5000
+            selector:  { timestamp: { $gte: cutoff } },
+            fields:    ['sensor', 'gForce', 'timestamp'],
+            limit:     5000,
+            use_index: 'idx-timestamp'
         });
         // Sort by timestamp
         all.docs.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -565,39 +571,57 @@ app.get('/api/management/uptime', async (req, res) => {
     }
 });
 
+// GET /api/latest/gps — most recent GPS fix from rm_gps DB
+app.get('/api/latest/gps', async (_req, res) => {
+    try {
+        const r = await gpsDB.find({
+            selector: { timestamp: { $gt: '' } },
+            fields:   ['lat', 'lng', 'speedKmh', 'totalDistanceM', 'timestamp'],
+            sort:     [{ timestamp: 'desc' }],
+            limit:    1,
+            use_index: 'idx-timestamp'
+        });
+        if (r.docs.length) res.json(r.docs[0]);
+        else               res.json(null);
+    } catch (e) {
+        console.error('/api/latest/gps error:', e.message);
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // GET /api/management/active-sensors
 // Sensors seen in last 24 h; "online" = sent data in last 10 seconds
 app.get('/api/management/active-sensors', async (req, res) => {
     try {
-        const dbNow     = await getDBNow();
-        const now       = dbNow.getTime();
-        const cutoff24h = new Date(now - 24 * 3600000).toISOString();
+        const now       = Date.now();
         const cutoff10s = new Date(now - 10 * 1000).toISOString();
 
-        const all = await realtimeDataDB.find({
-            selector: { timestamp: { $gte: cutoff24h } },
-            fields:   ['sensor', 'timestamp'],
-            limit:    10000
-        });
-
-        // Track last-seen timestamp per sensor
+        // Get latest record per sensor — query descending so newest comes first
         const lastSeen = {};
-        for (const doc of all.docs) {
-            if (!lastSeen[doc.sensor] || doc.timestamp > lastSeen[doc.sensor])
-                lastSeen[doc.sensor] = doc.timestamp;
+        for (const side of ['left', 'right']) {
+            const r = await realtimeDataDB.find({
+                selector:  { sensor: side, timestamp: { $gt: '' } },
+                fields:    ['sensor', 'timestamp'],
+                sort:      [{ sensor: 'desc' }, { timestamp: 'desc' }],
+                limit:     1,
+                use_index: 'idx-sensor-timestamp'
+            });
+            if (r.docs.length) {
+                const ts = r.docs[0].timestamp;
+                lastSeen[side] = ts.endsWith('Z') ? ts : ts + 'Z';
+            }
         }
 
-        const sensors = Object.keys(lastSeen);
-        // A sensor is "online" if it sent data in the last 10 seconds
+        const sensors       = Object.keys(lastSeen);
         const onlineSensors = sensors.filter(s => lastSeen[s] >= cutoff10s);
         const knownSensors  = sensors.filter(s => lastSeen[s] <  cutoff10s);
 
         res.json({
-            count:          onlineSensors.length,
-            total_known:    sensors.length,
-            online:         onlineSensors,
-            last_known:     knownSensors,
-            last_seen:      lastSeen   // ISO timestamp per sensor
+            count:       onlineSensors.length,
+            total_known: sensors.length,
+            online:      onlineSensors,
+            last_known:  knownSensors,
+            last_seen:   lastSeen
         });
     } catch (e) {
         console.error('/api/management/active-sensors error:', e.message);
@@ -631,28 +655,30 @@ app.get('/api/management/active-alerts', async (req, res) => {
 // Last-known gForce per sensor (look back up to 6 h) → operational/warning/critical
 app.get('/api/management/system-health', async (req, res) => {
     try {
-        const dbNow    = await getDBNow();
-        const now      = dbNow.getTime();
-        const cutoff6h = new Date(now - 6 * 3600000).toISOString();
-        const cutoff5m = new Date(now - 5 * 60000).toISOString();
+        const now       = Date.now();
+        const cutoff10s = new Date(now - 10 * 1000).toISOString();
 
-        const all = await realtimeDataDB.find({
-            selector: { timestamp: { $gte: cutoff6h } },
-            fields:   ['sensor', 'gForce', 'timestamp'],
-            limit:    5000
-        });
-
-        // Keep latest reading per sensor
+        // Get latest gForce per sensor directly
         const latest = {};
-        for (const doc of all.docs) {
-            if (!latest[doc.sensor] || doc.timestamp > latest[doc.sensor].timestamp)
-                latest[doc.sensor] = doc;
+        for (const side of ['left', 'right']) {
+            const r = await realtimeDataDB.find({
+                selector:  { sensor: side, timestamp: { $gt: '' } },
+                fields:    ['sensor', 'gForce', 'timestamp'],
+                sort:      [{ sensor: 'desc' }, { timestamp: 'desc' }],
+                limit:     1,
+                use_index: 'idx-sensor-timestamp'
+            });
+            if (r.docs.length) {
+                const doc = r.docs[0];
+                const ts  = doc.timestamp.endsWith('Z') ? doc.timestamp : doc.timestamp + 'Z';
+                latest[side] = { ...doc, timestamp: ts };
+            }
         }
 
         let operational = 0, warning = 0, critical = 0;
         for (const doc of Object.values(latest)) {
             const g      = doc.gForce || 0;
-            const isLive = doc.timestamp >= cutoff5m;
+            const isLive = doc.timestamp >= cutoff10s;
             if (!isLive) {
                 // sensor not seen recently → treat as offline (critical)
                 critical++;
@@ -740,10 +766,8 @@ mqttClient.on('connect', () => {
         'adj/datalogger/sensors/right',
         'adj/datalogger/health',
         'adj/datalogger/sensors/accelerometer',
-        'adj/datalogger/sensors/gps',
-        'sensor/railway/accelerometer/#',
-        'sensor/accelerometer/#',
-        'sensor/gps/#'
+        'adj/datalogger/sensors/gps'
+
     ].forEach(topic => {
         mqttClient.subscribe(topic, err => {
             if (err) console.error(`Subscribe failed ${topic}:`, err.message);
@@ -770,25 +794,23 @@ mqttClient.on('message', async (topic, message) => {
             return;
         }
 
-        // ── GPS topic ─────────────────────────────────────────────────────
+        // ── GPS — detect by message content (may be embedded in sensor message) ──
         // Format: [GPS] T-13:13:47 D-27-03-2026 LAT:28584835N LON:77315948E SPD:25cm/s
-        if (topic === 'adj/datalogger/sensors/gps' || topic.includes('gps')) {
+        if (msgStr.includes('[GPS]')) {
             const latM  = msgStr.match(/LAT:(\d+)([NS])/i);
             const lonM  = msgStr.match(/LON:(\d+)([EW])/i);
             const spdM  = msgStr.match(/SPD:(\d+(?:\.\d+)?)cm\/s/i);
 
             if (latM && lonM) {
-                // Raw values are in degrees * 1e6 (e.g. 28584835 → 28.584835)
                 const rawLat = parseInt(latM[1]);
                 const rawLon = parseInt(lonM[1]);
                 const lat = (rawLat / 1e6) * (latM[2].toUpperCase() === 'S' ? -1 : 1);
                 const lng = (rawLon / 1e6) * (lonM[2].toUpperCase() === 'W' ? -1 : 1);
                 const speedCms = spdM ? parseFloat(spdM[1]) : 0;
-                const speedKmh = +(speedCms * 0.036).toFixed(2); // cm/s → km/h
+                const speedKmh = +(speedCms * 0.036).toFixed(2);
 
-                // Distance accumulation
                 if (lastGpsCoord) {
-                    const R    = 6371000; // Earth radius in metres
+                    const R    = 6371000;
                     const dLat = (lat - lastGpsCoord.lat) * Math.PI / 180;
                     const dLon = (lng - lastGpsCoord.lng) * Math.PI / 180;
                     const a    = Math.sin(dLat/2)**2 +
@@ -796,14 +818,19 @@ mqttClient.on('message', async (topic, message) => {
                                  Math.cos(lat * Math.PI/180) *
                                  Math.sin(dLon/2)**2;
                     const d    = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                    if (d < 500) totalDistanceM += d; // ignore GPS jumps > 500 m
+                    if (d < 500) totalDistanceM += d;
                 }
                 lastGpsCoord = { lat, lng };
 
                 const gpsPayload = { lat, lng, speedKmh, totalDistanceM, timestamp };
                 io.emit('gps-data', gpsPayload);
+                if (gpsDB) gpsDB.insert(gpsPayload).catch(e => console.error('gps insert:', e.message));
+                console.log(`GPS: lat=${lat} lng=${lng} spd=${speedKmh}km/h`);
             }
-            return;
+
+            // If message is ONLY GPS (dedicated topic), stop here
+            if (topic === 'adj/datalogger/sensors/gps' || topic.includes('gps')) return;
+            // Otherwise fall through to also parse sensor data below
         }
 
         // ── Sensor topics only ────────────────────────────────────────────
