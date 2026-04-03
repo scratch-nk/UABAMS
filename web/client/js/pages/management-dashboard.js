@@ -226,18 +226,46 @@ async function fetchChartFromDB() {
     } catch (e) { console.error('chart DB fetch error:', e); }
 }
 
+// ── GPS ────────────────────────────────────────────────────────────────────
+async function fetchGPS() {
+    try {
+        const d = await fetch(`${API}/api/latest/gps`).then(r => r.json());
+        if (!d) return;
+
+        const lat = d.lat >= 0 ? `${d.lat.toFixed(6)}° N` : `${Math.abs(d.lat).toFixed(6)}° S`;
+        const lng = d.lng >= 0 ? `${d.lng.toFixed(6)}° E` : `${Math.abs(d.lng).toFixed(6)}° W`;
+        const ts  = new Date(d.timestamp.endsWith('Z') ? d.timestamp : d.timestamp + 'Z');
+        const ageMs = Date.now() - ts.getTime();
+        const isLive = ageMs < 10000;
+
+        document.getElementById('gps-lat').textContent      = lat;
+        document.getElementById('gps-lng').textContent      = lng;
+        document.getElementById('gps-speed').textContent    = `${d.speedKmh} km/h`;
+        document.getElementById('gps-distance').textContent = `${(d.totalDistanceM / 1000).toFixed(2)} km`;
+        document.getElementById('gps-lastfix').textContent  = ts.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+
+        const statusEl = document.getElementById('gps-status');
+        const statusItem = document.getElementById('gps-status-item');
+        statusEl.textContent = isLive ? 'Active' : 'Stale';
+        statusEl.style.color = isLive ? '#22c55e' : '#ef4444';
+        statusItem.style.borderLeft = `3px solid ${isLive ? '#22c55e' : '#ef4444'}`;
+    } catch (e) { console.error('gps fetch error:', e); }
+}
+
 // ── Initial load ──────────────────────────────────────────────────────────
 fetchChartFromDB();
 fetchUptime();
 fetchActiveSensors();
 fetchActiveAlerts();
 fetchSystemHealth();
+fetchGPS();
 
 // ── Poll everything from DB every 3s ─────────────────────────────────────
 setInterval(() => {
     fetchChartFromDB();
     fetchActiveSensors();
     fetchSystemHealth();
+    fetchGPS();
 }, 3000);
 
 // Uptime and alerts are slower-moving — poll every 15s
