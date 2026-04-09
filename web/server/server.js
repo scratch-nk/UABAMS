@@ -7,6 +7,14 @@ const cors      = require('cors');
 const path      = require('path');
 const fs        = require('fs');
 const os        = require('os');
+const { DateTime } = require("luxon"); // make sure luxon is installed!
+
+// ── Timezone configuration (change as needed) ─────────────────────────────
+const TIMEZONE = "Asia/Kolkata";
+
+function getTimezoneTimestamp() {
+return DateTime.now().setZone(TIMEZONE).toFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
+}
 
 // ── Persistent JSON fallback ──────────────────────────────────────────────
 const PEAKS_LOG_FILE = path.join(__dirname, 'peaks_log.json');
@@ -385,14 +393,35 @@ app.get('/api/history/sensor', async (req, res) => {
 
 app.get('/api/impacts', async (req, res) => {
     try {
+        const hours = parseInt(req.query.hours) || 0;
+
+        // Prefer CouchDB if available (no need for dbReady, the DB is already initialised)
         if (accelerometerEventsDB) {
-            const response = await accelerometerEventsDB.list(
-                { include_docs: true, descending: true, limit: 200 });
-            const docs = response.rows.map(r => r.doc).filter(d => d && !d._id?.startsWith('_'));
-            if (docs.length) return res.json(docs);
+            // If hours > 0, filter by timestamp; otherwise get all
+            const selector = hours > 0
+                ? { timestamp: { $gte: new Date(Date.now() - hours * 3600000).toISOString() } }
+                : { timestamp: { $gt: '' } };
+            const response = await accelerometerEventsDB.find({
+                selector,
+                sort: [{ timestamp: 'desc' }],
+                limit: 1000
+            });
+            const docs = response.docs.filter(d => d && !d._id?.startsWith('_'));
+            if (docs.length) {
+                return res.json(docs);
+            }
         }
-    } catch (e) { console.error('/api/impacts error:', e.message); }
-    res.json([...peaksLog].reverse().slice(0, 200));
+    } catch (e) {
+        console.error('/api/impacts error:', e.message);
+    }
+
+    // Fallback to JSON log (peaksLog)
+    const fallback = [...peaksLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    if (hours > 0) {
+        const cutoff = new Date(Date.now() - hours * 3600000).toISOString();
+        return res.json(fallback.filter(p => p.timestamp >= cutoff).slice(0, 1000));
+    }
+    res.json(fallback.slice(0, 1000));
 });
 
 app.get('/api/historical/graph/:hours', async (req, res) => {
@@ -695,6 +724,27 @@ app.get('/api/management/system-health', async (req, res) => {
         console.error('/api/management/system-health error:', e.message);
         res.status(500).json({ error: e.message });
     }
+});
+
+// GET /api/monitoring/all – returns all monitoring_data documents, sorted oldest first
+app.get('/api/monitoring/all', async (req, res) => {
+  try {
+    if (!monitoringDataDB) {
+      return res.status(503).json({ error: 'Database not ready' });
+    }
+    const result = await monitoringDataDB.list({
+      include_docs: true,
+      limit: 500000
+    });
+    const docs = result.rows
+      .map(r => r.doc)
+      .filter(d => d && d.timestamp && d.device_id && !d._id?.startsWith('_'))
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    res.json(docs);
+  } catch (err) {
+    console.error('/api/monitoring/all error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/health', async (req, res) => {
