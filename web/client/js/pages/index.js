@@ -29,6 +29,28 @@ function updateTime() {
 setInterval(updateTime, 1000);
 updateTime();
 
+// ── Dark Mode ─────────────────────────────────────────────────────────────
+(function initDarkMode() {
+    const btn  = document.getElementById('darkModeBtn');
+    const icon = document.getElementById('darkModeIcon');
+    if (!btn) return;
+
+    const apply = (dark) => {
+        document.body.classList.toggle('dark', dark);
+        if (icon) {
+            icon.className = dark ? 'fas fa-sun' : 'fas fa-moon';
+        }
+        localStorage.setItem('railmonitor-dark', dark ? '1' : '0');
+    };
+
+    // Restore saved preference
+    apply(localStorage.getItem('railmonitor-dark') === '1');
+
+    btn.addEventListener('click', () => {
+        apply(!document.body.classList.contains('dark'));
+    });
+})();
+
 // ── Accel status pills ────────────────────────────────────────────────────
 function setAccelStatus(accelId, status) {
     ACCEL_STATES.forEach(state => {
@@ -83,6 +105,67 @@ function updateRecentAlerts(impacts) {
     }).join('');
 }
 
+// ── Notification Bell ─────────────────────────────────────────────────────
+const _notifAlerts = [];
+let   _notifBellOpen = false;
+
+function _notifRender() {
+    const badge    = document.getElementById('notifBadge');
+    const listEl   = document.getElementById('notifList');
+    if (!badge || !listEl) return;
+
+    badge.textContent = _notifAlerts.length > 99 ? '99+' : _notifAlerts.length;
+    badge.style.display = _notifAlerts.length ? 'flex' : 'none';
+
+    listEl.innerHTML = _notifAlerts.length
+        ? _notifAlerts.slice(0, 8).map(a => `
+            <div class="notif-item">
+                <div class="notif-item-peak">${a.peak.toFixed(2)}g — ${a.sensor} (${a.pClass || '—'})</div>
+                <div class="notif-item-meta">${a.time}</div>
+            </div>`).join('')
+        : '<p class="notif-empty">No alerts yet</p>';
+}
+
+(function initNotifBell() {
+    const btn      = document.getElementById('notifBellBtn');
+    const dropdown = document.getElementById('notifDropdown');
+    const clearBtn = document.getElementById('notifClear');
+    if (!btn) return;
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _notifBellOpen = !_notifBellOpen;
+        dropdown.style.display = _notifBellOpen ? 'block' : 'none';
+    });
+
+    document.addEventListener('click', () => {
+        _notifBellOpen = false;
+        if (dropdown) dropdown.style.display = 'none';
+    });
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _notifAlerts.length = 0;
+            _notifRender();
+        });
+    }
+})();
+
+function _notifAddHighAlert(impact) {
+    if ((impact.severity || '').toUpperCase() !== 'HIGH') return;
+    _notifAlerts.unshift({
+        peak:   impact.peak_g || impact.gForce || 0,
+        sensor: impact.sensor || '—',
+        pClass: impact.p_class || null,
+        time:   new Date(impact.timestamp || Date.now()).toLocaleTimeString('en-IN', {
+            timeZone: 'Asia/Kolkata', hour12: false
+        })
+    });
+    if (_notifAlerts.length > 50) _notifAlerts.pop();
+    _notifRender();
+}
+
 function addImpactAlert(impact) {
     const container = document.querySelector('.alerts-mini-list');
     if (!container) return;
@@ -98,6 +181,7 @@ function addImpactAlert(impact) {
     container.insertBefore(el, container.firstChild);
     while (container.children.length > 5) container.removeChild(container.lastChild);
 
+    _notifAddHighAlert(impact);
     if (impact.severity === 'HIGH') showHighSeverityPopup(impact);
 }
 

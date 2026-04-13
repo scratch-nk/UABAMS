@@ -75,27 +75,108 @@ body {
 /* Main content */
 .main-content { max-width: 1800px; margin: 0 auto; padding: 1.5rem; }
 
-/* Banner */
-.banner {
-    background: linear-gradient(to right, #dbeafe, #e0f2fe);
-    border: 1px solid #bae6fd;
+/* Session Status Bar */
+.session-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
     border-radius: 0.75rem;
-    padding: 2rem;
+    padding: 0.75rem 1.25rem;
     margin-bottom: 1.5rem;
-    text-align: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
 }
 
-.banner-icon {
-    background-color: #ffffff;
-    padding: 0.75rem;
-    border-radius: 0.75rem;
-    display: inline-flex;
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.25rem 0.75rem;
+    flex: 1;
+    min-width: 140px;
+}
+
+.status-icon {
+    width: 18px;
+    height: 18px;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.status-item-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.status-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.status-value {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #0f172a;
+    font-family: 'Courier New', monospace;
+}
+
+.status-divider {
+    width: 1px;
+    height: 32px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+
+.status-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.status-badge[data-state="live"]    { background: #dcfce7; color: #16a34a; }
+.status-badge[data-state="nofix"]   { background: #f1f5f9; color: #64748b; }
+.status-badge[data-state="online"]  { background: #dcfce7; color: #16a34a; }
+.status-badge[data-state="offline"] { background: #fee2e2; color: #dc2626; }
+
+/* Threshold Quick-View Strip */
+.threshold-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
     margin-bottom: 1rem;
-    border: 1px solid #e0f2fe;
+    flex-wrap: wrap;
 }
 
-.banner h2 { font-size: 1.5rem; font-weight: 600; color: #0f172a; margin-bottom: 0.5rem; }
-.banner p  { font-size: 0.875rem; color: #475569; }
+.threshold-strip-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    margin-right: 0.25rem;
+}
+
+.threshold-chip {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+}
+
+.chip-p1 { background: #fef3c7; color: #92400e; }
+.chip-p2 { background: #fee2e2; color: #b91c1c; }
+.chip-p3 { background: #4c0519; color: #fecdd3; }
 
 /* Metrics grid */
 .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
@@ -133,6 +214,8 @@ body {
 .action-btn.primary:hover     { background-color: #1d4ed8; }
 .action-btn.secondary         { background-color: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; }
 .action-btn.secondary:hover   { background-color: #f8fafc; border-color: #cbd5e1; }
+.action-btn.reset-btn         { background-color: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+.action-btn.reset-btn:hover   { background-color: #fee2e2; border-color: #f87171; }
 
 /* Quick Stats */
 .quick-stats {
@@ -229,6 +312,17 @@ body {
 
 .accel-badge.cyan   { background-color: #cffafe; border-color: #06b6d4; color: #0e7490; }
 .accel-badge.purple { background-color: #ede9fe; border-color: #a78bfa; color: #6d28d9; }
+
+.sensor-freshness-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    transition: background 0.3s, color 0.3s;
+}
+.sensor-freshness-badge[data-state="live"]  { background: #dcfce7; color: #16a34a; }
+.sensor-freshness-badge[data-state="stale"] { background: #fef9c3; color: #92400e; }
 
 .values-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
 

@@ -25,6 +25,8 @@
                     <option value="medium">Medium</option>
                     <option value="low">Low</option>
                 </select>
+                <input type="date" id="filterFrom" title="From date" style="padding:0.4rem 0.6rem;border:1px solid #e2e8f0;border-radius:0.375rem;font-size:0.8rem;color:#0f172a;background:#fff;">
+                <input type="date" id="filterTo"   title="To date"   style="padding:0.4rem 0.6rem;border:1px solid #e2e8f0;border-radius:0.375rem;font-size:0.8rem;color:#0f172a;background:#fff;">
                 <button onclick="exportEvents()">
                     <i class="fas fa-download"></i> Export
                 </button>
@@ -53,6 +55,7 @@
         <div id="eventsList"><p class="empty">Loading events…</p></div>
     </div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="../js/common.js"></script>
     <script src="../js/pages/events.js"></script>
 </body>

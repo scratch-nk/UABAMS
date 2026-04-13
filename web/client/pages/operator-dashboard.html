@@ -54,15 +54,59 @@
             </button>
         </div>
 
-        <!-- Banner -->
-        <div class="banner">
-            <div class="banner-icon">
-                <svg class="icon-lg" fill="none" stroke="#3b82f6" stroke-width="2" viewBox="0 0 24 24">
+        <!-- Session Status Bar -->
+        <div class="session-status-bar">
+            <div class="status-item">
+                <svg class="status-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+                <div class="status-item-body">
+                    <span class="status-label">Session Time</span>
+                    <span class="status-value" id="sessionTimer">00:00:00</span>
+                </div>
+            </div>
+            <div class="status-divider"></div>
+            <div class="status-item">
+                <svg class="status-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z"/><circle cx="12" cy="10" r="3"/>
+                </svg>
+                <div class="status-item-body">
+                    <span class="status-label">GPS</span>
+                    <span class="status-value" id="statusGpsCoords">—</span>
+                </div>
+                <span class="status-badge" id="statusGpsBadge" data-state="nofix">NO FIX</span>
+            </div>
+            <div class="status-divider"></div>
+            <div class="status-item">
+                <svg class="status-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                 </svg>
+                <div class="status-item-body">
+                    <span class="status-label">Speed</span>
+                    <span class="status-value" id="statusSpeed">— km/h</span>
+                </div>
             </div>
-            <h2>Operator Dashboard</h2>
-            <p>High-level overview for operators. Quick access to critical information</p>
+            <div class="status-divider"></div>
+            <div class="status-item">
+                <svg class="status-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+                </svg>
+                <div class="status-item-body">
+                    <span class="status-label">MQTT</span>
+                    <span class="status-value" id="statusMqtt">Connecting…</span>
+                </div>
+                <span class="status-badge" id="statusMqttBadge" data-state="offline">OFFLINE</span>
+            </div>
+            <div class="status-divider"></div>
+            <div class="status-item">
+                <svg class="status-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                <div class="status-item-body">
+                    <span class="status-label">Last Data</span>
+                    <span class="status-value" id="statusLastData">—</span>
+                </div>
+            </div>
         </div>
 
         <!-- Main Metrics — IDs used directly by JS -->
@@ -97,6 +141,14 @@
             </div>
         </div>
 
+        <!-- Threshold Quick-View Strip -->
+        <div class="threshold-strip" id="thresholdStrip">
+            <span class="threshold-strip-label">Active Thresholds:</span>
+            <span class="threshold-chip chip-p1" id="threshChipP1">P1: —</span>
+            <span class="threshold-chip chip-p2" id="threshChipP2">P2: —</span>
+            <span class="threshold-chip chip-p3" id="threshChipP3">P3: —</span>
+        </div>
+
         <!-- Action Buttons -->
         <div class="action-grid">
             <button class="action-btn primary">
@@ -114,6 +166,13 @@
                     <line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
                 DAILY REPORT
+            </button>
+            <button class="action-btn reset-btn" id="resetSessionBtn">
+                <svg class="icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <polyline points="1 4 1 10 7 10"/>
+                    <path d="M3.51 15a9 9 0 1 0 .49-4.95"/>
+                </svg>
+                RESET SESSION
             </button>
 
             <!-- CSV range modal -->
@@ -188,12 +247,6 @@
                                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
                             </svg>
                         </button>
-                        <!-- Reset button: clears display counters only, DB untouched -->
-                        <button class="icon-btn" id="resetBtn" title="Reset display counters">
-                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
-                            </svg>
-                        </button>
                     </div>
                 </div>
                 <div class="chart-container">
@@ -216,7 +269,10 @@
             <div class="accel-card">
                 <div class="accel-header">
                     <h3>Accelerometer 1 — Left (S1)</h3>
-                    <div class="accel-badge cyan">ACCEL-1</div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <span class="sensor-freshness-badge" id="freshBadge1" data-state="stale">STALE</span>
+                        <div class="accel-badge cyan">ACCEL-1</div>
+                    </div>
                 </div>
                 <div class="accel-section-label">Raw Axes</div>
                 <div class="values-grid">
@@ -247,7 +303,10 @@
             <div class="accel-card">
                 <div class="accel-header">
                     <h3>Accelerometer 2 — Right (S2)</h3>
-                    <div class="accel-badge purple">ACCEL-2</div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <span class="sensor-freshness-badge" id="freshBadge2" data-state="stale">STALE</span>
+                        <div class="accel-badge purple">ACCEL-2</div>
+                    </div>
                 </div>
                 <div class="accel-section-label">Raw Axes</div>
                 <div class="values-grid">
