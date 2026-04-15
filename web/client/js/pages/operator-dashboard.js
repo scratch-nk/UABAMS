@@ -118,22 +118,7 @@ $('refreshBtn')?.addEventListener('click', () => {
     loadHistoricalChart();
 });
 
-// ── Reset button — display only, DB untouched ─────────────────────────────
-$('resetBtn')?.addEventListener('click', () => {
-    if (!confirm('Reset all display counters to zero?\n\nThis only clears the screen — all database records are kept.\nThe counters will repopulate when the next impact arrives.')) return;
-    ['impactsToday','highSeverity','maxPeak','lastPeak',
-     'totalDistance','distanceKm'].forEach(id => {
-        const el = $(id);
-        if (!el) return;
-        if (id === 'totalDistance') { el.textContent = '0 m'; return; }
-        if (id === 'distanceKm')    { el.textContent = '0.000 km'; return; }
-        el.textContent = id.toLowerCase().includes('peak') ? '—' : '0';
-    });
-    const badge = $('lastPeakClass');
-    if (badge) { badge.textContent = '—'; badge.style.background = '#f1f5f9'; badge.style.color = '#64748b'; }
-    initializeSensorData();
-    console.log('[operator] Display reset to zero');
-});
+// ── Reset button — wired via injectResetModal() IIFE below ───────────────
 
 // ── Sensor chart ──────────────────────────────────────────────────────────
 function generateSensorData() {
@@ -250,6 +235,53 @@ function showHighGAlert(sensor, peakG) {
     }, 1000);
 }
 
+// ── Session Status Bar ────────────────────────────────────────────────────
+(function initSessionStatusBar() {
+    const sessionStart = Date.now();
+
+    // Session timer
+    setInterval(() => {
+        const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+        const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+        const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+        const s = String(elapsed % 60).padStart(2, '0');
+        setText('sessionTimer', `${h}:${m}:${s}`);
+    }, 1000);
+
+    function setStatusBadge(id, state, label) {
+        const el = $(id);
+        if (!el) return;
+        el.dataset.state = state;
+        el.textContent   = label;
+    }
+
+    // Wire MQTT connection status
+    window._statusBarOnConnect    = () => {
+        setStatusBadge('statusMqttBadge', 'online', 'ONLINE');
+        setText('statusMqtt', 'Connected');
+    };
+    window._statusBarOnDisconnect = () => {
+        setStatusBadge('statusMqttBadge', 'offline', 'OFFLINE');
+        setText('statusMqtt', 'Disconnected');
+    };
+
+    // Wire last data timestamp from accelerometer-data events
+    window._statusBarOnData = (ts) => {
+        const d = new Date(ts || Date.now());
+        setText('statusLastData', d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }));
+    };
+
+    // Wire GPS updates
+    window._statusBarOnGps = (gps) => {
+        const lat  = gps.lat != null  ? (+gps.lat).toFixed(5)  : null;
+        const lon  = gps.lon != null  ? (+gps.lon).toFixed(5)  : null;
+        const spd  = gps.speed != null ? (+gps.speed).toFixed(1) + ' km/h' : '— km/h';
+        setText('statusGpsCoords', lat && lon ? `${lat}, ${lon}` : '—');
+        setText('statusSpeed', spd);
+        setStatusBadge('statusGpsBadge', lat ? 'live' : 'nofix', lat ? 'GPS LIVE' : 'NO FIX');
+    };
+})();
+
 // ── Socket.IO ─────────────────────────────────────────────────────────────
 const socket = io(SERVER);
 
@@ -257,6 +289,7 @@ socket.on('connect', () => {
     console.log('[operator] Socket connected:', socket.id);
     setText('liveText', 'LIVE');
     const dot = $('liveDot'); if (dot) dot.style.background = '#22c55e';
+    window._statusBarOnConnect?.();
     loadHistoricalChart();
     // Always re-fetch stats from DB on (re)connect
     refreshStats();
@@ -265,14 +298,42 @@ socket.on('connect', () => {
 socket.on('disconnect', () => {
     setText('liveText', 'NO SERVER');
     const dot = $('liveDot'); if (dot) dot.style.background = '#ef4444';
+    window._statusBarOnDisconnect?.();
 });
 
 socket.on('connect_error', () => {
     setText('liveText', 'ERROR');
     const dot = $('liveDot'); if (dot) dot.style.background = '#f59e0b';
+    window._statusBarOnDisconnect?.();
 });
 
+// ── Sensor freshness tracking ─────────────────────────────────────────────
+const _sensorLastSeen = { left: 0, right: 0 };
+const STALE_MS = 5000;
+
+function _updateFreshnessBadge(sensor) {
+    const now  = Date.now();
+    const id   = sensor === 'left' ? 'freshBadge1' : 'freshBadge2';
+    const el   = $(id);
+    if (!el) return;
+    const age = now - _sensorLastSeen[sensor];
+    const live = age < STALE_MS;
+    el.dataset.state = live ? 'live' : 'stale';
+    el.textContent   = live ? 'LIVE'  : 'STALE';
+}
+
+setInterval(() => {
+    _updateFreshnessBadge('left');
+    _updateFreshnessBadge('right');
+}, 1000);
+
 socket.on('accelerometer-data', (data) => {
+    window._statusBarOnData?.(data.timestamp);
+    if (data.sensor === 'left' || data.sensor === 'right') {
+        _sensorLastSeen[data.sensor] = Date.now();
+        _updateFreshnessBadge(data.sensor);
+    }
+
     if (!isLiveStreaming) return;
 
     if (data.sensor === 'left') {
@@ -295,6 +356,10 @@ socket.on('accelerometer-data', (data) => {
 // On every new impact: re-fetch stats from CouchDB so counts are live + accurate
 socket.on('new-impact', () => {
     refreshStats();
+});
+
+socket.on('gps-update', (data) => {
+    window._statusBarOnGps?.(data);
 });
 
 // ── System Health ─────────────────────────────────────────────────────────
@@ -501,14 +566,10 @@ socket.on('stats-update', (stats) => {
         }
     });
 
-    // Wire the reset button in the card header to open this modal
-    const resetBtn = document.getElementById('resetBtn');
-    if (resetBtn) {
-        // Remove old inline listener if any
-        const newBtn = resetBtn.cloneNode(true);
-        resetBtn.parentNode.replaceChild(newBtn, resetBtn);
-        newBtn.addEventListener('click', () => {
-            // Reset radio to default
+    // Wire the prominent RESET SESSION button in the action-grid
+    const resetSessionBtn = document.getElementById('resetSessionBtn');
+    if (resetSessionBtn) {
+        resetSessionBtn.addEventListener('click', () => {
             modal.querySelector('input[value="save"]').checked = true;
             document.getElementById('optSave').style.borderColor = '#22c55e';
             document.getElementById('optWipe').style.borderColor = '#e2e8f0';
@@ -601,11 +662,18 @@ function getPClassClient(peakG) {
     return null;
 }
 
+function updateThresholdStrip(t) {
+    const p1 = $('threshChipP1'); if (p1) p1.textContent = `P1: ${t.p1Min}–${t.p1Max}g`;
+    const p2 = $('threshChipP2'); if (p2) p2.textContent = `P2: ${t.p2Min}–${t.p2Max}g`;
+    const p3 = $('threshChipP3'); if (p3) p3.textContent = `P3: ≥${t.p3Min}g`;
+}
+
 async function loadThresholdsFromServer() {
     try {
         const res  = await fetch(`${SERVER}/api/thresholds`);
         const data = await res.json();
         clientThresholds = data;
+        updateThresholdStrip(data);
         console.log('[operator] Thresholds loaded:', clientThresholds);
         // Save to localStorage as offline cache
         if (typeof saveThresholds === 'function') saveThresholds(data);
@@ -614,6 +682,7 @@ async function loadThresholdsFromServer() {
         if (typeof loadStoredThresholds === 'function') {
             clientThresholds = loadStoredThresholds();
         }
+        updateThresholdStrip(clientThresholds);
         console.warn('[operator] Using cached thresholds:', clientThresholds);
     }
 }
@@ -621,6 +690,7 @@ async function loadThresholdsFromServer() {
 // Live update: when config page saves, server broadcasts this event
 socket.on('thresholds-updated', (thresholds) => {
     clientThresholds = thresholds;
+    updateThresholdStrip(thresholds);
     if (typeof saveThresholds === 'function') saveThresholds(thresholds);
     console.log('[operator] Thresholds updated live:', thresholds);
     // Re-fetch stats so Last Peak badge re-classifies with new thresholds

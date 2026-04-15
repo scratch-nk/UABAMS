@@ -34,3 +34,70 @@ table {
     color: #64748b;
     font-style: italic;
 }
+
+/* ── Dark Mode ──────────────────────────────────────────────────────────── */
+body.dark {
+    background-color: #0f172a !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark .card,
+body.dark .metric-card,
+body.dark .accel-card,
+body.dark .session-status-bar,
+body.dark .threshold-strip,
+body.dark .health-item,
+body.dark .event-card,
+body.dark .stat-card,
+body.dark .kpi-card,
+body.dark .graph-card {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark .card-header,
+body.dark .card-title h3,
+body.dark .metric-value,
+body.dark .metric-label,
+body.dark .accel-header h3,
+body.dark .value-label,
+body.dark .value-number,
+body.dark .status-value,
+body.dark .event-time,
+body.dark .event-sensor,
+body.dark .event-location {
+    color: #e2e8f0 !important;
+}
+
+body.dark .header,
+body.dark header.header {
+    background-color: #1e293b !important;
+    border-color: #334155 !important;
+}
+
+body.dark .header-left h1 { color: #f1f5f9 !important; }
+
+body.dark .accel-section-label,
+body.dark .metric-label,
+body.dark .status-label,
+body.dark .threshold-strip-label {
+    color: #94a3b8 !important;
+}
+
+body.dark .action-btn.secondary {
+    background-color: #1e293b !important;
+    border-color: #475569 !important;
+    color: #e2e8f0 !important;
+}
+
+body.dark .event-card { border-color: #334155 !important; }
+body.dark .event-card.event-high   { border-left-color: #ef4444 !important; }
+body.dark .event-card.event-medium { border-left-color: #f59e0b !important; }
+body.dark .event-card.event-low    { border-left-color: #22c55e !important; }
+
+body.dark #eventDetailPanel { background: #1e293b !important; border-color: #334155 !important; }
+body.dark .notif-dropdown    { background: #1e293b !important; border-color: #334155 !important; }
+body.dark .notif-header      { color: #e2e8f0 !important; border-color: #334155 !important; }
+body.dark .notif-item        { border-color: #334155 !important; }
+body.dark .notif-item-meta   { color: #94a3b8 !important; }
