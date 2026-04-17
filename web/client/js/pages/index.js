@@ -13,9 +13,32 @@ const sensorCache = {
 };
 
 // ── Distance tracking (meter-wise, increments per data packet) ────────────
-// Server sends data at ~500ms intervals; we track distance using coordinate
-// field from GPS if available, otherwise we just count packets × ~5m
 let currentDistanceM = 0; // meters, updated from GPS or estimated
+
+// ── Header connection status ─────────────────────────────────────────────
+let lastSensorDataTime = 0;
+const DATA_TIMEOUT_MS = 10000; // 10 seconds
+
+function updateHeaderStatus() {
+    const dot = document.querySelector('.mqtt-dot');
+    const text = document.getElementById('mqttText');
+    if (!dot || !text) return;
+
+    const connected = socket && socket.connected;
+    const hasRecentData = (Date.now() - lastSensorDataTime) < DATA_TIMEOUT_MS;
+
+    if (connected && hasRecentData) {
+        text.textContent = 'LIVE';
+        text.style.color = '#22c55e';
+        dot.style.background = '#22c55e';
+        dot.classList.add('pulsing');
+    } else {
+        text.textContent = 'OFFLINE';
+        text.style.color = '#ef4444';
+        dot.style.background = '#ef4444';
+        dot.classList.remove('pulsing');
+    }
+}
 
 // ── Clock ─────────────────────────────────────────────────────────────────
 function updateTime() {
@@ -61,12 +84,6 @@ function setAccelStatus(accelId, status) {
 }
 
 // ── Northern Central panel updater ───────────────────────────────────────
-// Called on every accelerometer-data socket event
-// Mapping (matches graphs.js exactly):
-//   AB-L-VERT = rmsV from left sensor
-//   AB-L-LAT  = rmsL from left sensor
-//   AB-R-VERT = rmsV from right sensor
-//   AB-R-LAT  = rmsL from right sensor
 function updateNorthernPanel() {
     const L = sensorCache.left;
     const R = sensorCache.right;
@@ -201,7 +218,6 @@ function updateGPSDisplay(location) {
     const speedEl = document.getElementById('speed');
 
     if (location.coordinate_km !== undefined && coordEl) {
-        // e.g. "1393 km 79 m"
         const km  = Math.floor(location.coordinate_km);
         const m   = Math.round((location.coordinate_km - km) * 1000);
         coordEl.textContent = km + ' km ' + m + ' m';
@@ -229,6 +245,7 @@ function connectToBackend() {
         console.log('[index.js] Socket connected');
         setAccelStatus(1, 'connected');
         setAccelStatus(2, 'connected');
+        updateHeaderStatus();
         loadInitialAlerts();
     });
 
@@ -236,23 +253,25 @@ function connectToBackend() {
         console.warn('[index.js] Socket disconnected:', reason);
         setAccelStatus(1, 'not-connected');
         setAccelStatus(2, 'not-connected');
+        updateHeaderStatus();
     });
 
     socket.on('connect_error', err => {
         console.error('[index.js] Socket error:', err.message);
         setAccelStatus(1, 'not-connected');
         setAccelStatus(2, 'not-connected');
+        updateHeaderStatus();
     });
 
-    // ── Main data event ───────────────────────────────────────────────────
+    // Periodic check for data timeout
+    setInterval(updateHeaderStatus, 2000);
+
     socket.on('accelerometer-data', data => {
-        /*
-          data = { sensor, x, y, z, rmsV, rmsL, peak, gForce, timestamp }
-          VERT = |Z|           (vertical peak from Z axis)
-          LAT  = sqrt(X²+Y²)  (lateral peak from horizontal plane)
-        */
         const side = data.sensor;
         if (side !== 'left' && side !== 'right') return;
+
+        lastSensorDataTime = Date.now();
+        updateHeaderStatus();
 
         const x    = data.x ?? 0;
         const y    = data.y ?? 0;
@@ -263,10 +282,7 @@ function connectToBackend() {
         sensorCache[side].vert = vert;
         sensorCache[side].lat  = lat;
 
-        // Estimate distance: increment by ~5m per packet (~500ms × ~36 km/h ≈ 5m)
-        // If GPS coordinate is available it will be overridden by updateGPSDisplay
         currentDistanceM += 5;
-
         updateNorthernPanel();
     });
 

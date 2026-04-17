@@ -1,10 +1,4 @@
-/* =============================================================================
-   operator-dashboard.js
-   Stats always loaded from CouchDB (/api/impacts/stats) — persists on refresh
-   applyStats() updates ALL 7 stat elements by explicit ID — no positional hacks
-   High-G alert: per-sensor, both shown simultaneously, auto-dismiss 1s
-   Reset button: display-only reset, DB untouched
-============================================================================= */
+/* operator-dashboard.js – Final version with detailed communication status */
 
 const SERVER = window.location.origin;
 
@@ -18,66 +12,52 @@ let latestRight      = { x: 0, y: 0, z: 0, gForce: 0 };
 startClock('currentTime', 'currentDate');
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-const $        = id  => document.getElementById(id);
-const setText  = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-const fmtG     = v   => v != null ? (+v).toFixed(2) + 'g' : '—';
-const fmtG4    = v   => v != null ? (+v).toFixed(4)       : '—';
-const fmtInt   = v   => v != null ? v.toString()           : '—';
+const $ = id => document.getElementById(id);
+const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+const fmtG  = v => v != null ? (+v).toFixed(2) + 'g' : '—';
+const fmtG4 = v => v != null ? (+v).toFixed(4) : '—';
+const fmtInt = v => v != null ? v.toString() : '—';
 
-// ── P-class badge colours ─────────────────────────────────────────────────
 const P_CLASS_STYLE = {
-    'P1': { bg: '#fef3c7', color: '#92400e' },  // amber
-    'P2': { bg: '#fee2e2', color: '#b91c1c' },  // red
-    'P3': { bg: '#4c0519', color: '#fecdd3' },  // deep red
-    '—':  { bg: '#f1f5f9', color: '#64748b' }   // grey
+    'P1': { bg: '#fef3c7', color: '#92400e' },
+    'P2': { bg: '#fee2e2', color: '#b91c1c' },
+    'P3': { bg: '#4c0519', color: '#fecdd3' },
+    '—':  { bg: '#f1f5f9', color: '#64748b' }
 };
 
-// ── applyStats — updates ALL stat display elements by explicit ID ─────────
 function applyStats(stats) {
     if (!stats) return;
-
-    const total = stats.total        ?? 0;
+    const total = stats.total ?? 0;
     const high  = stats.highSeverity ?? 0;
-    const maxP  = stats.maxPeak      ?? 0;
-    const lastP = stats.lastPeak     ?? 0;
+    const maxP  = stats.maxPeak ?? 0;
+    const lastP = stats.lastPeak ?? 0;
     const pCls  = stats.lastPeakClass || '—';
     const distM = stats.totalDistanceM ?? 0;
 
-    // Top metric cards
     setText('impactsToday', total);
     setText('highSeverity', high);
-    setText('maxPeak',      fmtG(maxP));
-
-    // Last Peak + P-class badge
+    setText('maxPeak', fmtG(maxP));
     setText('lastPeak', lastP > 0 ? fmtG(lastP) : '—');
     const badge = $('lastPeakClass');
     if (badge) {
         badge.textContent = pCls;
         const style = P_CLASS_STYLE[pCls] || P_CLASS_STYLE['—'];
         badge.style.background = style.bg;
-        badge.style.color      = style.color;
+        badge.style.color = style.color;
     }
-
-    // Distance traveled
     setText('totalDistance', distM + ' m');
-    setText('distanceKm',    (distM / 1000).toFixed(3) + ' km');
-
-    console.log(`[operator] Stats applied — total:${total} high:${high} max:${fmtG(maxP)} last:${fmtG(lastP)} (${pCls}) dist:${distM}m`);
+    setText('distanceKm', (distM / 1000).toFixed(3) + ' km');
 }
 
-// ── Fetch stats from DB and apply ─────────────────────────────────────────
 async function refreshStats() {
     try {
-        const res   = await fetch(`${SERVER}/api/impacts/stats`);
+        const res = await fetch(`${SERVER}/api/impacts/stats`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const stats = await res.json();
-        applyStats(stats);
-    } catch (e) {
-        console.warn('[operator] Stats fetch failed:', e.message);
-    }
+        applyStats(await res.json());
+    } catch (e) { console.warn('[operator] Stats fetch failed:', e.message); }
 }
 
-// ── Debug toggle ──────────────────────────────────────────────────────────
+// Debug toggle
 const debugToggle = $('debugToggle');
 if (debugToggle) {
     debugToggle.addEventListener('click', () => {
@@ -91,13 +71,13 @@ if (debugToggle) {
     });
 }
 
-// ── Live / Pause toggle ───────────────────────────────────────────────────
+// Live / Pause
 $('playPauseBtn')?.addEventListener('click', () => {
     isLiveStreaming = !isLiveStreaming;
-    const li  = $('liveIndicator');
+    const li = $('liveIndicator');
     const dot = $('liveDot');
-    const lt  = $('liveText');
-    const pi  = $('pauseIcon');
+    const lt = $('liveText');
+    const pi = $('pauseIcon');
     if (isLiveStreaming) {
         li?.classList.replace('paused','streaming');
         dot?.classList.add('pulsing');
@@ -111,14 +91,27 @@ $('playPauseBtn')?.addEventListener('click', () => {
     }
 });
 
-// ── Refresh button — reload chart history ─────────────────────────────────
+// Refresh button
 $('refreshBtn')?.addEventListener('click', () => {
     currentDataIndex = 0;
     initializeSensorData();
     loadHistoricalChart();
 });
 
-// ── Reset button — wired via injectResetModal() IIFE below ───────────────
+// Reset button
+$('resetBtn')?.addEventListener('click', () => {
+    if (!confirm('Reset all display counters to zero?\n\nThis only clears the screen — all database records are kept.\nThe counters will repopulate when the next impact arrives.')) return;
+    ['impactsToday','highSeverity','maxPeak','lastPeak','totalDistance','distanceKm'].forEach(id => {
+        const el = $(id);
+        if (!el) return;
+        if (id === 'totalDistance') { el.textContent = '0 m'; return; }
+        if (id === 'distanceKm')    { el.textContent = '0.000 km'; return; }
+        el.textContent = id.toLowerCase().includes('peak') ? '—' : '0';
+    });
+    const badge = $('lastPeakClass');
+    if (badge) { badge.textContent = '—'; badge.style.background = '#f1f5f9'; badge.style.color = '#64748b'; }
+    initializeSensorData();
+});
 
 // ── Sensor chart ──────────────────────────────────────────────────────────
 function generateSensorData() {
@@ -127,7 +120,6 @@ function generateSensorData() {
 let sensorData = generateSensorData();
 const ctx = $('sensorChart')?.getContext('2d');
 let chart = null;
-
 if (ctx) {
     chart = new Chart(ctx, {
         type: 'line',
@@ -151,7 +143,6 @@ if (ctx) {
         }
     });
 }
-
 function initializeSensorData() {
     sensorData = generateSensorData();
     if (!chart) return;
@@ -160,7 +151,6 @@ function initializeSensorData() {
     chart.data.datasets[1].data = sensorData.map(d => d.accel2);
     chart.update();
 }
-
 function pushToChart(a1, a2) {
     currentDataIndex++;
     sensorData.shift();
@@ -171,17 +161,15 @@ function pushToChart(a1, a2) {
     chart.data.datasets[1].data = sensorData.map(d => d.accel2);
     chart.update('none');
 }
-
 async function loadHistoricalChart() {
     try {
-        const res  = await fetch(`${SERVER}/api/historical/graph/24`);
+        const res = await fetch(`${SERVER}/api/historical/graph/24`);
         const data = await res.json();
         if (!data.length) return;
         currentDataIndex = 0;
         sensorData = generateSensorData();
         data.forEach((pt, i) => {
-            if (i < sensorDataPoints)
-                sensorData[i] = { time: i, accel1: pt.accel1 || 0, accel2: pt.accel2 || 0 };
+            if (i < sensorDataPoints) sensorData[i] = { time: i, accel1: pt.accel1 || 0, accel2: pt.accel2 || 0 };
         });
         if (!chart) return;
         chart.data.labels = sensorData.map(d => d.time);
@@ -191,188 +179,68 @@ async function loadHistoricalChart() {
     } catch (e) { console.warn('[operator] Historical chart load failed:', e.message); }
 }
 
-// ── fillAccel ─────────────────────────────────────────────────────────────
 function fillAccel(prefix, data) {
-    setText(`${prefix}X`,      fmtG4(data.x));
-    setText(`${prefix}Y`,      fmtG4(data.y));
-    setText(`${prefix}Z`,      fmtG4(data.z));
-    setText(`${prefix}Peak`,   fmtG4(data.peak ?? data.gForce));
-    setText(`${prefix}RmsV`,   fmtG4(data.rmsV));
-    setText(`${prefix}RmsL`,   fmtG4(data.rmsL));
-    setText(`${prefix}SdV`,    fmtG4(data.sdV));
-    setText(`${prefix}SdL`,    fmtG4(data.sdL));
-    setText(`${prefix}P2pV`,   fmtG4(data.p2pV));
-    setText(`${prefix}P2pL`,   fmtG4(data.p2pL));
-    setText(`${prefix}Fs`,     fmtInt(data.fs));
+    setText(`${prefix}X`, fmtG4(data.x));
+    setText(`${prefix}Y`, fmtG4(data.y));
+    setText(`${prefix}Z`, fmtG4(data.z));
+    setText(`${prefix}Peak`, fmtG4(data.peak ?? data.gForce));
+    setText(`${prefix}RmsV`, fmtG4(data.rmsV));
+    setText(`${prefix}RmsL`, fmtG4(data.rmsL));
+    setText(`${prefix}SdV`, fmtG4(data.sdV));
+    setText(`${prefix}SdL`, fmtG4(data.sdL));
+    setText(`${prefix}P2pV`, fmtG4(data.p2pV));
+    setText(`${prefix}P2pL`, fmtG4(data.p2pL));
+    setText(`${prefix}Fs`, fmtInt(data.fs));
     setText(`${prefix}Window`, fmtInt(data.window));
 }
 
-// ── High-G alert — per sensor, both shown together, auto-dismiss 1s ───────
+// ── High-G alert ─────────────────────────────────────────────────────────
 const alertState = { left: null, right: null };
 let alertDismissTimers = { left: null, right: null };
-
 function showHighGAlert(sensor, peakG) {
     alertState[sensor] = `${peakG.toFixed(2)}g on ${sensor.toUpperCase()} axle`;
-
     const banner = $('highGAlert');
-    const msg    = $('highGMsg');
+    const msg = $('highGMsg');
     if (!banner || !msg) return;
-
-    // Show combined message for whichever sensors are currently active
     msg.textContent = [alertState.left, alertState.right].filter(Boolean).join('   |   ');
     banner.style.display = 'flex';
-
-    // Clear previous timer for this sensor and set a fresh 1s one
     clearTimeout(alertDismissTimers[sensor]);
     alertDismissTimers[sensor] = setTimeout(() => {
         alertState[sensor] = null;
         const remaining = [alertState.left, alertState.right].filter(Boolean);
-        if (remaining.length) {
-            msg.textContent = remaining.join('   |   ');
-        } else {
-            banner.style.display = 'none';
-        }
+        if (remaining.length) msg.textContent = remaining.join('   |   ');
+        else banner.style.display = 'none';
     }, 1000);
 }
 
-// ── Session Status Bar ────────────────────────────────────────────────────
-(function initSessionStatusBar() {
-    const sessionStart = Date.now();
-
-    // Session timer
-    setInterval(() => {
-        const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
-        const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
-        const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
-        const s = String(elapsed % 60).padStart(2, '0');
-        setText('sessionTimer', `${h}:${m}:${s}`);
-    }, 1000);
-
-    function setStatusBadge(id, state, label) {
-        const el = $(id);
-        if (!el) return;
-        el.dataset.state = state;
-        el.textContent   = label;
-    }
-
-    // Wire MQTT connection status
-    window._statusBarOnConnect    = () => {
-        setStatusBadge('statusMqttBadge', 'online', 'ONLINE');
-        setText('statusMqtt', 'Connected');
-    };
-    window._statusBarOnDisconnect = () => {
-        setStatusBadge('statusMqttBadge', 'offline', 'OFFLINE');
-        setText('statusMqtt', 'Disconnected');
-    };
-
-    // Wire last data timestamp from accelerometer-data events
-    window._statusBarOnData = (ts) => {
-        const d = new Date(ts || Date.now());
-        setText('statusLastData', d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }));
-    };
-
-    // Wire GPS updates
-    window._statusBarOnGps = (gps) => {
-        const lat  = gps.lat != null  ? (+gps.lat).toFixed(5)  : null;
-        const lon  = gps.lon != null  ? (+gps.lon).toFixed(5)  : null;
-        const spd  = gps.speed != null ? (+gps.speed).toFixed(1) + ' km/h' : '— km/h';
-        setText('statusGpsCoords', lat && lon ? `${lat}, ${lon}` : '—');
-        setText('statusSpeed', spd);
-        setStatusBadge('statusGpsBadge', lat ? 'live' : 'nofix', lat ? 'GPS LIVE' : 'NO FIX');
-    };
-})();
-
-// ── Socket.IO ─────────────────────────────────────────────────────────────
+// ── Socket.IO ────────────────────────────────────────────────────────────
 const socket = io(SERVER);
-
 socket.on('connect', () => {
-    console.log('[operator] Socket connected:', socket.id);
+    console.log('[operator] Socket connected');
     setText('liveText', 'LIVE');
     const dot = $('liveDot'); if (dot) dot.style.background = '#22c55e';
-    window._statusBarOnConnect?.();
     loadHistoricalChart();
-    // Always re-fetch stats from DB on (re)connect
     refreshStats();
 });
-
 socket.on('disconnect', () => {
     setText('liveText', 'NO SERVER');
     const dot = $('liveDot'); if (dot) dot.style.background = '#ef4444';
-    window._statusBarOnDisconnect?.();
 });
-
 socket.on('connect_error', () => {
     setText('liveText', 'ERROR');
     const dot = $('liveDot'); if (dot) dot.style.background = '#f59e0b';
-    window._statusBarOnDisconnect?.();
 });
 
-// ── Sensor freshness tracking ─────────────────────────────────────────────
-const _sensorLastSeen = { left: 0, right: 0 };
-const STALE_MS = 5000;
-
-function _updateFreshnessBadge(sensor) {
-    const now  = Date.now();
-    const id   = sensor === 'left' ? 'freshBadge1' : 'freshBadge2';
-    const el   = $(id);
-    if (!el) return;
-    const age = now - _sensorLastSeen[sensor];
-    const live = age < STALE_MS;
-    el.dataset.state = live ? 'live' : 'stale';
-    el.textContent   = live ? 'LIVE'  : 'STALE';
-}
-
-setInterval(() => {
-    _updateFreshnessBadge('left');
-    _updateFreshnessBadge('right');
-}, 1000);
-
-socket.on('accelerometer-data', (data) => {
-    window._statusBarOnData?.(data.timestamp);
-    if (data.sensor === 'left' || data.sensor === 'right') {
-        _sensorLastSeen[data.sensor] = Date.now();
-        _updateFreshnessBadge(data.sensor);
-    }
-
-    if (!isLiveStreaming) return;
-
-    if (data.sensor === 'left') {
-        latestLeft = data;
-        fillAccel('accel1', data);
-    } else if (data.sensor === 'right') {
-        latestRight = data;
-        fillAccel('accel2', data);
-    }
-
-    // High-G check per sensor independently
-    const peak = data.peak ?? data.gForce ?? 0;
-    if (peak >= 8 && (data.sensor === 'left' || data.sensor === 'right')) {
-        showHighGAlert(data.sensor, peak);
-    }
-
-    pushToChart(latestLeft.gForce || 0, latestRight.gForce || 0);
-});
-
-// On every new impact: re-fetch stats from CouchDB so counts are live + accurate
-socket.on('new-impact', () => {
-    refreshStats();
-});
-
-socket.on('gps-update', (data) => {
-    window._statusBarOnGps?.(data);
-});
-
-// ── System Health ─────────────────────────────────────────────────────────
+// ── System Health Grid (separate card) ───────────────────────────────────
 const HEALTH_COMPONENTS = [
     { key: 'adxl345_s1', id: 'healthAccel1', label: 'Accel-1 (S1)' },
     { key: 'adxl345_s2', id: 'healthAccel2', label: 'Accel-2 (S2)' },
     { key: 'w5500',       id: 'healthComm',  label: 'Comm (W5500)' },
-    { key: 'phyLink',     id: 'healthPhy',   label: 'PHY Link'     },
-    { key: 'tcp',         id: 'healthTcp',   label: 'TCP'          },
-    { key: 'spi1',        id: 'healthSpi',   label: 'SPI1'         },
-    { key: 'usart2',      id: 'healthUsart', label: 'USART2'       },
+    { key: 'phyLink',     id: 'healthPhy',   label: 'PHY Link' },
+    { key: 'tcp',         id: 'healthTcp',   label: 'TCP' },
+    { key: 'spi1',        id: 'healthSpi',   label: 'SPI1' },
+    { key: 'usart2',      id: 'healthUsart', label: 'USART2' },
 ];
-
 (function buildHealthGrid() {
     const grid = document.querySelector('.health-grid');
     if (!grid) return;
@@ -384,344 +252,441 @@ const HEALTH_COMPONENTS = [
                 </svg>
                 <span>${c.label}</span>
             </div>
-            <span class="health-status">Waiting...</span>
+            <span class="health-status not-connected">NOT CONNECTED</span>
         </div>`).join('');
 })();
-
+let healthStatus = {};
 socket.on('system-health', (health) => {
-    const ts = new Date(health.timestamp || Date.now()).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
-
+    healthStatus = health;
     HEALTH_COMPONENTS.forEach(c => {
-        const row  = $(c.id);
+        const row = $(c.id);
         if (!row) return;
-        const status = health[c.key] || 'UNKNOWN';
-        const isOk   = status === 'OK';
-        row.className = 'health-item ' + (isOk ? 'operational' : 'error');
+        const raw = health[c.key];
+        const isOk = raw === 'OK';
+        const isFail = raw === 'FAIL';
+        row.className = 'health-item ' + (isOk ? 'operational' : isFail ? 'error' : 'not-connected');
         row.querySelector('svg').innerHTML = isOk
             ? `<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>`
-            : `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>`;
-        row.querySelector('.health-status').textContent = isOk ? 'Operational' : status;
+            : isFail
+            ? `<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/>`
+            : `<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>`;
+        const statusEl = row.querySelector('.health-status');
+        statusEl.textContent = isOk ? 'CONNECTED' : isFail ? 'FAIL' : 'NOT CONNECTED';
+        statusEl.className = 'health-status ' + (isOk ? 'connected' : isFail ? 'fail' : 'not-connected');
     });
-
-    const container = document.querySelector('.log-container');
-    if (container) {
-        const failed  = HEALTH_COMPONENTS.filter(c => health[c.key] && health[c.key] !== 'OK').map(c => c.label);
-        const type    = failed.length ? 'warning' : 'info';
-        const message = failed.length ? `Health check FAIL: ${failed.join(', ')}` : 'Health check passed — all systems OK';
-        const entry   = document.createElement('div');
-        entry.className = 'log-entry';
-        entry.innerHTML = `<span class="log-time">${ts}</span>
-            <span class="log-type ${type}">${type}</span>
-            <span class="log-message">${message}</span>
-            <span class="log-sensor">[System]</span>`;
-        container.insertBefore(entry, container.firstChild);
-        while (container.children.length > 20) container.removeChild(container.lastChild);
-    }
+    updateHardwareStatus(); // refresh communication line
 });
 
-// ── Boot ──────────────────────────────────────────────────────────────────
+// Track previous warning states to avoid repeated popups
+const previousWarningState = {
+    left: true,      // assume initially online
+    right: true,
+    gps: true,
+    usart2: true,
+    spi1: true,
+    w5500: true,
+    tcp: true,
+    phyLink: true,
+    system: true
+};
+
+// ── Last active timestamps and detailed communication ─────────────────────
+let wasHardwareOnline = false; 
+let lastLeftTime = null, lastRightTime = null, lastGpsTime = null; showInfoUntil = 0;
+
+function formatLogTime(isoString) {
+    if (!isoString) return '--';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' ' +
+           date.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+}
+
+function getDetailedCommunicationStatus() {
+    // Only called when hardware is online (any sensor active)
+    const parts = [];
+    if (healthStatus.usart2 !== undefined) parts.push(`USART: ${healthStatus.usart2 === 'OK' ? 'ok' : 'fail'}`);
+    if (healthStatus.spi1 !== undefined)   parts.push(`SPI: ${healthStatus.spi1 === 'OK' ? 'ok' : 'fail'}`);
+    if (healthStatus.w5500 !== undefined)  parts.push(`W5500: ${healthStatus.w5500 === 'OK' ? 'ok' : 'fail'}`);
+    if (healthStatus.tcp !== undefined)    parts.push(`TCP: ${healthStatus.tcp === 'OK' ? 'ok' : 'fail'}`);
+    if (healthStatus.phyLink !== undefined)parts.push(`PHY: ${healthStatus.phyLink === 'OK' ? 'ok' : 'fail'}`);
+    return parts.length ? parts.join(', ') : 'No health data';
+}
+
+function updateHardwareStatus() {
+    const container = document.querySelector('.log-container');
+    if (!container) return;
+
+    const now = Date.now();
+    const leftOnline = lastLeftTime && (now - new Date(lastLeftTime).getTime() < 15000);
+    const rightOnline = lastRightTime && (now - new Date(lastRightTime).getTime() < 15000);
+    const gpsOnline = lastGpsTime && (now - new Date(lastGpsTime).getTime() < 30000);
+    const anyOnline = leftOnline || rightOnline || gpsOnline;
+
+    // Detect transition from offline to online
+    if (anyOnline && !wasHardwareOnline) {
+        showInfoUntil = now + 5000; // show info for 5 seconds after coming online
+    }
+    wasHardwareOnline = anyOnline;
+
+    const showInfo = now < showInfoUntil;
+
+    const currentTime = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+    const leftFail = healthStatus.adxl345_s1 === 'FAIL';
+    const rightFail = healthStatus.adxl345_s2 === 'FAIL';
+
+    const leftMsg = leftFail ? 'Accel-1 connection failed'
+                  : leftOnline ? 'ACTIVE NOW'
+                  : `OFFLINE, last active ${formatLogTime(lastLeftTime)}`;
+    const rightMsg = rightFail ? 'Accel-2 connection failed'
+                   : rightOnline ? 'ACTIVE NOW'
+                   : `OFFLINE, last active ${formatLogTime(lastRightTime)}`;
+    const gpsMsg = gpsOnline ? 'ACTIVE NOW' : `OFFLINE, last active ${formatLogTime(lastGpsTime)}`;
+
+    const logEntries = [];
+
+    function addEntry(type, message, sensor, stateKey) {
+        // Show info entries only during the 5-second window; warnings always shown
+        if (type === 'warning' || (type === 'info' && showInfo)) {
+            logEntries.push({ time: currentTime, type, message, sensor });
+        }
+
+        // Trigger popup only for warnings and only on state change
+        if (stateKey && type === 'warning') {
+            const wasOk = previousWarningState[stateKey] === true;
+            if (wasOk) {
+                showToast(`${sensor}: ${message}`, 'warning');
+            }
+            previousWarningState[stateKey] = false;
+        } else if (stateKey && type === 'info') {
+            previousWarningState[stateKey] = true;
+        }
+    }
+
+    addEntry(leftOnline ? 'info' : 'warning', leftMsg, '[Accel-1]', 'left');
+    addEntry(rightOnline ? 'info' : 'warning', rightMsg, '[Accel-2]', 'right');
+    addEntry(gpsOnline ? 'info' : 'warning', gpsMsg, '[GPS]', 'gps');
+
+    if (anyOnline) {
+        const healthMap = [
+            { key: 'usart2', label: '[USART]', stateKey: 'usart2' },
+            { key: 'spi1', label: '[SPI1]', stateKey: 'spi1' },
+            { key: 'w5500', label: '[W5500]', stateKey: 'w5500' },
+            { key: 'tcp', label: '[TCP]', stateKey: 'tcp' },
+            { key: 'phyLink', label: '[PHY Link]', stateKey: 'phyLink' }
+        ];
+        for (const h of healthMap) {
+            const status = healthStatus[h.key];
+            if (status !== undefined) {
+                const isOk = status === 'OK';
+                const msg = `${h.key.toUpperCase()}: ${isOk ? 'OK' : 'FAIL'}`;
+                addEntry(isOk ? 'info' : 'warning', msg, h.label, h.stateKey);
+            }
+        }
+    } else {
+        addEntry('warning', 'Communication: Not connected since the hardware is offline.', '[System]', 'system');
+    }
+
+    container.innerHTML = logEntries.map(entry => `
+        <div class="log-entry">
+            <span class="log-time">${entry.time}</span>
+            <span class="log-type ${entry.type}">${entry.type === 'info' ? 'info' : 'warn'}</span>
+            <span class="log-message">${entry.message}</span>
+            <span class="log-sensor">${entry.sensor}</span>
+        </div>
+    `).join('');
+}
+
+async function fetchLatestTimestamps() {
+    try {
+        const res = await fetch(`${SERVER}/api/monitoring/all`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const allDocs = await res.json();
+        let latestLeft = null, latestRight = null, latestGps = null;
+        for (const doc of allDocs) {
+            if (!doc.timestamp) continue;
+            if (doc.device_id === 'left') {
+                if (!latestLeft || doc.timestamp > latestLeft) latestLeft = doc.timestamp;
+            } else if (doc.device_id === 'right') {
+                if (!latestRight || doc.timestamp > latestRight) latestRight = doc.timestamp;
+            } else if (doc.device_id === 'gps') {
+                if (!latestGps || doc.timestamp > latestGps) latestGps = doc.timestamp;
+            }
+        }
+        if (latestLeft) lastLeftTime = latestLeft;
+        if (latestRight) lastRightTime = latestRight;
+        if (latestGps) lastGpsTime = latestGps;
+        if (!lastGpsTime) {
+            try {
+                const gpsRes = await fetch(`${SERVER}/api/latest/gps`);
+                const gpsData = await gpsRes.json();
+                if (gpsData && gpsData.timestamp) lastGpsTime = gpsData.timestamp;
+            } catch (e) {}
+        }
+        updateHardwareStatus();
+    } catch (e) {
+        console.warn('Failed to fetch timestamps:', e);
+        updateHardwareStatus();
+    }
+}
+
+// Initialise log with loading message
+const logContainer = document.querySelector('.log-container');
+if (logContainer) {
+    logContainer.innerHTML = `<div class="log-entry"><span class="log-time">--:--:--</span><span class="log-type info">info</span><span class="log-message">Loading hardware status...</span><span class="log-sensor">[System]</span></div>`;
+}
+fetchLatestTimestamps();
+
+// Socket updates for accelerometer data (updates timestamps)
+socket.on('accelerometer-data', (data) => {
+    if (!isLiveStreaming) return;
+    if (data.sensor === 'left') {
+        latestLeft = data;
+        fillAccel('accel1', data);
+        if (!lastLeftTime || data.timestamp > lastLeftTime) lastLeftTime = data.timestamp;
+    } else if (data.sensor === 'right') {
+        latestRight = data;
+        fillAccel('accel2', data);
+        if (!lastRightTime || data.timestamp > lastRightTime) lastRightTime = data.timestamp;
+    }
+    const peak = data.peak ?? data.gForce ?? 0;
+    if (peak >= 8 && (data.sensor === 'left' || data.sensor === 'right')) showHighGAlert(data.sensor, peak);
+    pushToChart(latestLeft.gForce || 0, latestRight.gForce || 0);
+    updateHardwareStatus();
+});
+
+// Periodic refresh of status (every 5 seconds)
+setInterval(() => updateHardwareStatus(), 5000);
+setInterval(fetchLatestTimestamps, 30000);
+
+// ── Boot ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     initializeSensorData();
-    // Load persisted stats from CouchDB immediately — before any socket event
     refreshStats();
-    // Pre-fill health grid from last known health status
-    if (typeof window.preloadHealth === 'function') {
-        window.preloadHealth();
-    }
+    if (typeof window.preloadHealth === 'function') window.preloadHealth();
 });
 
-// ── Listen for server-pushed stats (fired on connect + every new impact) ──
-// This replaces the REST polling approach — server pushes directly
 socket.on('stats-update', (stats) => {
-    console.log('[operator] stats-update received:', stats);
+    console.log('[operator] stats-update received');
     applyStats(stats);
 });
 
-// ── Reset modal ───────────────────────────────────────────────────────────
+// ── Reset modal (unchanged) ──────────────────────────────────────────────
 (function injectResetModal() {
-    // Modal HTML injected into body
     const modal = document.createElement('div');
     modal.id = 'resetModal';
-    modal.style.cssText = `
-        display:none; position:fixed; inset:0; z-index:9999;
-        background:rgba(0,0,0,0.55); align-items:center; justify-content:center;`;
     modal.innerHTML = `
-        <div style="background:#fff; border-radius:16px; padding:2rem; max-width:440px; width:90%;
-                    box-shadow:0 20px 60px rgba(0,0,0,0.3); font-family:inherit;">
-            <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem;">
-                <svg style="width:28px;height:28px;color:#dc2626;flex-shrink:0;"
-                     fill="none" stroke="#dc2626" stroke-width="2" viewBox="0 0 24 24">
+        <div class="modal-content">
+            <div class="modal-header">
+                <svg fill="none" stroke="#dc2626" stroke-width="2" viewBox="0 0 24 24">
                     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                     <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
-                <h2 style="margin:0;font-size:1.2rem;color:#1e293b;">Reset Impact Data</h2>
+                <h2>Reset Impact Data</h2>
             </div>
-
-            <p style="color:#475569;margin-bottom:1.5rem;line-height:1.6;">
-                Choose how to reset. This action affects the impact counters and charts.
-            </p>
-
-            <!-- Option A: Save to DB -->
-            <label id="optSave" style="display:flex;align-items:flex-start;gap:0.75rem;padding:1rem;
-                   border:2px solid #e2e8f0;border-radius:10px;cursor:pointer;margin-bottom:0.75rem;
-                   transition:border-color 0.2s;">
-                <input type="radio" name="resetOpt" value="save" checked
-                       style="margin-top:3px;accent-color:#22c55e;">
-                <div>
-                    <div style="font-weight:600;color:#1e293b;">Keep database records</div>
-                    <div style="font-size:0.85rem;color:#64748b;margin-top:2px;">
-                        Reset display counters to zero. All CouchDB records are preserved —
-                        you can still review historical data.
+            <div class="modal-body">
+                <p>Choose how to reset. This action affects the impact counters and charts.</p>
+                <label class="radio-option" id="optSave">
+                    <input type="radio" name="resetOpt" value="save" checked>
+                    <div>
+                        <div class="option-title">Keep database records</div>
+                        <div class="option-desc">Reset display counters to zero. All CouchDB records are preserved — you can still review historical data.</div>
                     </div>
-                </div>
-            </label>
-
-            <!-- Option B: Wipe DB -->
-            <label id="optWipe" style="display:flex;align-items:flex-start;gap:0.75rem;padding:1rem;
-                   border:2px solid #e2e8f0;border-radius:10px;cursor:pointer;margin-bottom:1.5rem;
-                   transition:border-color 0.2s;">
-                <input type="radio" name="resetOpt" value="wipe"
-                       style="margin-top:3px;accent-color:#dc2626;">
-                <div>
-                    <div style="font-weight:600;color:#dc2626;">Wipe database &amp; reset everything</div>
-                    <div style="font-size:0.85rem;color:#64748b;margin-top:2px;">
-                        Permanently deletes all records from CouchDB and resets all counters to zero.
-                        <strong>This cannot be undone.</strong>
+                </label>
+                <label class="radio-option wipe" id="optWipe">
+                    <input type="radio" name="resetOpt" value="wipe">
+                    <div>
+                        <div class="option-title" style="color:#dc2626;">Wipe database & reset everything</div>
+                        <div class="option-desc">Permanently deletes all records from CouchDB and resets all counters to zero. <strong>This cannot be undone.</strong></div>
                     </div>
-                </div>
-            </label>
-
-            <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
-                <button id="resetCancelBtn"
-                        style="padding:0.6rem 1.25rem;border:1px solid #e2e8f0;border-radius:8px;
-                               background:#f8fafc;cursor:pointer;font-size:0.9rem;color:#64748b;">
-                    Cancel
-                </button>
-                <button id="resetConfirmBtn"
-                        style="padding:0.6rem 1.25rem;border:none;border-radius:8px;
-                               background:#dc2626;color:#fff;cursor:pointer;
-                               font-size:0.9rem;font-weight:600;">
-                    Reset
-                </button>
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-cancel" id="resetCancelBtn">Cancel</button>
+                <button class="btn-confirm" id="resetConfirmBtn">Reset</button>
             </div>
         </div>`;
     document.body.appendChild(modal);
 
-    // Highlight selected option border
+    const optSave = document.getElementById('optSave');
+    const optWipe = document.getElementById('optWipe');
+    const confirmBtn = document.getElementById('resetConfirmBtn');
+    const cancelBtn = document.getElementById('resetCancelBtn');
+
     modal.querySelectorAll('input[name="resetOpt"]').forEach(radio => {
         radio.addEventListener('change', () => {
-            document.getElementById('optSave').style.borderColor =
-                radio.value === 'save' ? '#22c55e' : '#e2e8f0';
-            document.getElementById('optWipe').style.borderColor =
-                radio.value === 'wipe' ? '#dc2626' : '#e2e8f0';
-            document.getElementById('resetConfirmBtn').style.background =
-                radio.value === 'wipe' ? '#dc2626' : '#22c55e';
+            const isWipe = radio.value === 'wipe';
+            optSave.classList.toggle('selected', !isWipe);
+            optWipe.classList.toggle('selected', isWipe);
+            confirmBtn.style.background = isWipe ? '#dc2626' : '#22c55e';
         });
     });
-    // Init border
-    document.getElementById('optSave').style.borderColor = '#22c55e';
 
-    // Cancel
-    document.getElementById('resetCancelBtn').addEventListener('click', () => {
-        modal.style.display = 'none';
-    });
+    // Set initial selected state
+    optSave.classList.add('selected');
+
+    cancelBtn.addEventListener('click', () => { modal.style.display = 'none'; });
     modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
 
-    // Confirm
-    document.getElementById('resetConfirmBtn').addEventListener('click', async () => {
+    confirmBtn.addEventListener('click', async () => {
         const selected = modal.querySelector('input[name="resetOpt"]:checked').value;
         const saveToDb = selected === 'save';
-        const btn      = document.getElementById('resetConfirmBtn');
-
-        btn.textContent = 'Resetting...';
-        btn.disabled    = true;
-
+        confirmBtn.textContent = 'Resetting...';
+        confirmBtn.disabled = true;
         try {
-            const res  = await fetch(`${SERVER}/api/reset`, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ saveToDb })
-            });
+            const res = await fetch(`${SERVER}/api/reset`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ saveToDb }) });
             const data = await res.json();
-
             if (data.success) {
                 modal.style.display = 'none';
-                // Zero out all display fields immediately
                 applyStats({ total: 0, highSeverity: 0, medium: 0, low: 0, maxPeak: 0, avgPeak: 0 });
                 initializeSensorData();
                 console.log('[reset] Success:', data.message);
-
-                // Show brief confirmation toast
-                showToast(saveToDb
-                    ? '✓ Display reset — database preserved'
-                    : '✓ Full reset — database wiped', saveToDb ? '#22c55e' : '#dc2626');
-            } else {
-                alert('Reset failed: ' + (data.error || 'Unknown error'));
-            }
-        } catch (e) {
-            alert('Reset request failed: ' + e.message);
-        } finally {
-            btn.textContent = 'Reset';
-            btn.disabled    = false;
-        }
+                showToast(saveToDb ? '✓ Display reset — database preserved' : 'Full reset — database wiped', saveToDb ? 'success' : 'warning');
+            } else alert('Reset failed: ' + (data.error || 'Unknown error'));
+        } catch (e) { alert('Reset request failed: ' + e.message); }
+        finally { confirmBtn.textContent = 'Reset'; confirmBtn.disabled = false; }
     });
 
-    // Wire the prominent RESET SESSION button in the action-grid
-    const resetSessionBtn = document.getElementById('resetSessionBtn');
-    if (resetSessionBtn) {
-        resetSessionBtn.addEventListener('click', () => {
+    const resetBtn = document.getElementById('resetBtn');
+    if (resetBtn) {
+        const newBtn = resetBtn.cloneNode(true);
+        resetBtn.parentNode.replaceChild(newBtn, resetBtn);
+        newBtn.addEventListener('click', () => {
             modal.querySelector('input[value="save"]').checked = true;
-            document.getElementById('optSave').style.borderColor = '#22c55e';
-            document.getElementById('optWipe').style.borderColor = '#e2e8f0';
-            document.getElementById('resetConfirmBtn').style.background = '#22c55e';
+            optSave.classList.add('selected');
+            optWipe.classList.remove('selected');
+            confirmBtn.style.background = '#22c55e';
             modal.style.display = 'flex';
         });
     }
 })();
 
-// ── Toast notification ────────────────────────────────────────────────────
-function showToast(message, color = '#22c55e') {
+function showToast(message, type = 'success') {
     const toast = document.createElement('div');
-    toast.style.cssText = `
-        position:fixed; bottom:1.5rem; right:1.5rem; z-index:99999;
-        background:${color}; color:#fff; padding:0.75rem 1.25rem;
-        border-radius:10px; font-size:0.9rem; font-weight:600;
-        box-shadow:0 4px 20px rgba(0,0,0,0.2);
-        animation:fadeInUp 0.3s ease;`;
-    toast.textContent = message;
+    toast.className = `toast-notification ${type}`;
+    
+    if (type === 'warning') {
+        toast.innerHTML = `<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+    }
+    toast.appendChild(document.createTextNode(type === 'warning' ? ` ${message}` : message));
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => toast.remove(), type === 'warning' ? 5000 : 3000);
 }
 
-// Listen for server-pushed display-reset (handles multi-tab sync)
 socket.on('display-reset', () => {
     applyStats({ total: 0, highSeverity: 0, medium: 0, low: 0, maxPeak: 0, avgPeak: 0 });
     initializeSensorData();
 });
 
-// ── CSV Download modal ────────────────────────────────────────────────────
+// ── CSV Download modal (unchanged) ──────────────────────────────────────
 (function initCsvModal() {
-    const modal       = document.getElementById('csvModal');
-    const openBtn     = document.getElementById('downloadCsvBtn');
-    const cancelBtn   = document.getElementById('csvCancelBtn');
+    const modal = document.getElementById('csvModal');
+    const openBtn = document.getElementById('downloadCsvBtn');
+    const cancelBtn = document.getElementById('csvCancelBtn');
     const downloadBtn = document.getElementById('csvDownloadBtn');
     if (!modal || !openBtn) return;
-
-    // Open modal
-    openBtn.addEventListener('click', () => {
-        modal.style.display = 'flex';
-    });
-
-    // Close modal
+    openBtn.addEventListener('click', () => { modal.style.display = 'flex'; });
     cancelBtn.addEventListener('click', () => { modal.style.display = 'none'; });
     modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
-
-    // Highlight selected radio border
     modal.querySelectorAll('input[name="csvRange"]').forEach(radio => {
         radio.addEventListener('change', () => {
             modal.querySelectorAll('label').forEach(l => l.style.borderColor = '#e2e8f0');
             radio.closest('label').style.borderColor = '#3b82f6';
         });
     });
-    // Init first option highlighted
     const first = modal.querySelector('input[name="csvRange"]:checked');
     if (first) first.closest('label').style.borderColor = '#3b82f6';
-
-    // Download
     downloadBtn.addEventListener('click', () => {
-        const hours    = modal.querySelector('input[name="csvRange"]:checked')?.value || '24';
-        const url      = `${SERVER}/api/impacts/export/csv?hours=${hours}`;
-        const dateStr  = new Date().toISOString().slice(0, 10);
+        const hours = modal.querySelector('input[name="csvRange"]:checked')?.value || '24';
+        const url = `${SERVER}/api/impacts/export/csv?hours=${hours}`;
+        const dateStr = new Date().toISOString().slice(0,10);
         const filename = `impact_report_${dateStr}.csv`;
-
-        // Trigger download via hidden anchor
-        const a  = document.createElement('a');
-        a.href   = url;
+        const a = document.createElement('a');
+        a.href = url;
         a.download = filename;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-
         modal.style.display = 'none';
         showToast(`✓ Downloading ${filename}`, '#3b82f6');
     });
 })();
 
-// ── Threshold sync ────────────────────────────────────────────────────────
-// Fetch current thresholds from server on load so P-class badge is correct
-// Also listen for live updates when config page saves new values
-let clientThresholds = { p1Min: 5, p1Max: 10, p2Min: 10, p2Max: 20, p3Min: 20 };
+function updateThresholdDisplay(thresholds) {
+  const chipP1 = $('threshChipP1');
+  const chipP2 = $('threshChipP2');
+  const chipP3 = $('threshChipP3');
 
+  if (chipP1) {
+    chipP1.textContent = (thresholds?.p1Min != null && thresholds?.p1Max != null)
+      ? `P1: ${thresholds.p1Min.toFixed(2)}–${thresholds.p1Max.toFixed(2)} g`
+      : 'P1: —';
+  }
+  if (chipP2) {
+    chipP2.textContent = (thresholds?.p2Min != null && thresholds?.p2Max != null)
+      ? `P2: ${thresholds.p2Min.toFixed(2)}–${thresholds.p2Max.toFixed(2)} g`
+      : 'P2: —';
+  }
+  if (chipP3) {
+    chipP3.textContent = (thresholds?.p3Min != null)
+      ? `P3: > ${thresholds.p3Min.toFixed(2)} g`
+      : 'P3: —';
+  }
+}
+
+// Keep track of active warning popups to avoid spamming
+const activeWarnings = new Set();
+// function showWarningNotification(message, sensor) {
+//     const toast = document.createElement('div');
+//     toast.style.cssText = `position:fixed; bottom:1.5rem; left:1.5rem; z-index:99999; background:#f59e0b; color:#fff; padding:0.75rem 1.25rem; border-radius:10px; font-size:0.9rem; font-weight:600; box-shadow:0 4px 20px rgba(0,0,0,0.2); animation:fadeInUp 0.3s ease; display:flex; align-items:center; gap:0.5rem;`;
+//     toast.innerHTML = `<svg style="width:18px;height:18px;" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ${sensor}: ${message}`;
+//     document.body.appendChild(toast);
+//     setTimeout(() => toast.remove(), 5000);
+// }
+
+// ── Threshold sync (unchanged) ──────────────────────────────────────────
+let clientThresholds = { p1Min: null, p1Max: null, p2Min: null, p2Max: null, p3Min: null };
 function getPClassClient(peakG) {
-    if (peakG == null) return null;
+    if (peakG == null || clientThresholds.p1Min == null) return null;
     const g = +peakG;
     const t = clientThresholds;
-    if (g >= t.p3Min)                    return 'P3';
-    if (g >= t.p2Min && g < t.p2Max)     return 'P2';
-    if (g >= t.p1Min && g < t.p1Max)     return 'P1';
+    if (g >= t.p3Min) return 'P3';
+    if (g >= t.p2Min) return 'P2';
+    if (g >= t.p1Min) return 'P1';
     return null;
 }
-
-function updateThresholdStrip(t) {
-    const p1 = $('threshChipP1'); if (p1) p1.textContent = `P1: ${t.p1Min}–${t.p1Max}g`;
-    const p2 = $('threshChipP2'); if (p2) p2.textContent = `P2: ${t.p2Min}–${t.p2Max}g`;
-    const p3 = $('threshChipP3'); if (p3) p3.textContent = `P3: ≥${t.p3Min}g`;
-}
-
 async function loadThresholdsFromServer() {
     try {
-        const res  = await fetch(`${SERVER}/api/thresholds`);
+        const res = await fetch(`${SERVER}/api/thresholds`);
         const data = await res.json();
         clientThresholds = data;
-        updateThresholdStrip(data);
-        console.log('[operator] Thresholds loaded:', clientThresholds);
-        // Save to localStorage as offline cache
+        updateThresholdDisplay(data);
         if (typeof saveThresholds === 'function') saveThresholds(data);
     } catch (e) {
-        // Fall back to localStorage cache
-        if (typeof loadStoredThresholds === 'function') {
-            clientThresholds = loadStoredThresholds();
-        }
-        updateThresholdStrip(clientThresholds);
+        if (typeof loadStoredThresholds === 'function') clientThresholds = loadStoredThresholds();
+        updateThresholdDisplay(clientThresholds);
         console.warn('[operator] Using cached thresholds:', clientThresholds);
     }
 }
-
-// Live update: when config page saves, server broadcasts this event
 socket.on('thresholds-updated', (thresholds) => {
     clientThresholds = thresholds;
-    updateThresholdStrip(thresholds);
-    if (typeof saveThresholds === 'function') saveThresholds(thresholds);
-    console.log('[operator] Thresholds updated live:', thresholds);
-    // Re-fetch stats so Last Peak badge re-classifies with new thresholds
-    refreshStats();
-    showToast(`✓ Thresholds updated: P1 ${thresholds.p1Min}–${thresholds.p1Max}g | P2 ${thresholds.p2Min}–${thresholds.p2Max}g | P3 >${thresholds.p3Min}g`, '#8b5cf6');
-});
 
-// Override applyStats badge to use client-side thresholds
-// (server also classifies, but this ensures instant UI response)
+    updateThresholdDisplay(thresholds);
+    if (typeof saveThresholds === 'function') saveThresholds(thresholds);
+    refreshStats();
+    showToast(`✓ Thresholds updated: P1 ${thresholds.p1Min}–${thresholds.p1Max}g | P2 ${thresholds.p2Min}–${thresholds.p2Max}g | P3 >${thresholds.p3Min}g`, 'success');
+});
 const _origApplyStats = applyStats;
-// Patch: after applyStats runs, re-classify lastPeak with current client thresholds
 socket.on('stats-update', (stats) => {
     _origApplyStats(stats);
-    // Re-apply badge using client thresholds in case they differ
     if (stats.lastPeak > 0) {
-        const pCls  = getPClassClient(stats.lastPeak) || '—';
+        const pCls = getPClassClient(stats.lastPeak) || '—';
         const badge = document.getElementById('lastPeakClass');
         if (badge) {
             badge.textContent = pCls;
-            const STYLE = {
-                'P1': { bg: '#fef3c7', color: '#92400e' },
-                'P2': { bg: '#fee2e2', color: '#b91c1c' },
-                'P3': { bg: '#4c0519', color: '#fecdd3' },
-                '—':  { bg: '#f1f5f9', color: '#64748b' }
-            };
-            const s = STYLE[pCls] || STYLE['—'];
-            badge.style.background = s.bg;
-            badge.style.color      = s.color;
+            const style = { 'P1': { bg: '#fef3c7', color: '#92400e' }, 'P2': { bg: '#fee2e2', color: '#b91c1c' }, 'P3': { bg: '#4c0519', color: '#fecdd3' }, '—': { bg: '#f1f5f9', color: '#64748b' } }[pCls] || { bg: '#f1f5f9', color: '#64748b' };
+            badge.style.background = style.bg;
+            badge.style.color = style.color;
         }
     }
 });
-
-// Load thresholds on boot
 loadThresholdsFromServer();

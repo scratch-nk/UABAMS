@@ -52,7 +52,7 @@ console.log(`Loaded ${peaksLog.length} existing impact records from JSON fallbac
 const { Pool } = require('pg');
 const pool = new Pool({
     host:     process.env.PG_HOST     || 'localhost',
-    port:     parseInt(process.env.PG_PORT) || 5433,
+    port:     parseInt(process.env.PG_PORT) || 5432,
     database: process.env.PG_DB       || 'uabams',
     user:     process.env.PG_USER     || 'uabams_user',
     password: process.env.PG_PASSWORD || 'uabams123',
@@ -719,6 +719,112 @@ app.get('/api/monitoring/all', async (req, res) => {
     }
 });
 
+// ── GET /api/rci/average?days=1|7|30 ──────────────────────────────────────
+app.get('/api/rci/average', async (req, res) => {
+    const days = Math.min(parseInt(req.query.days) || 1, 365);
+    try {
+        const dbNow  = await getDBNow();
+        const cutoff = new Date(dbNow.getTime() - days * 86400000).toISOString();
+
+        const r = await pool.query(`
+            SELECT rms_v 
+            FROM realtime_data 
+            WHERE timestamp >= $1 
+              AND sensor = 'left' 
+              AND rms_v IS NOT NULL
+        `, [cutoff]);
+
+        if (!r.rows.length) {
+            console.log(`[RCI] No data for ${days} days`);
+            return res.json({ avgRms: null, sampleCount: 0 });
+        }
+
+        const sum = r.rows.reduce((acc, row) => acc + parseFloat(row.rms_v || 0), 0);
+        const avgRms = sum / r.rows.length;
+
+        console.log(`[RCI] ${days} day avg RMS = ${avgRms.toFixed(4)} g (${r.rows.length} samples)`);
+        res.json({ 
+            avgRms: parseFloat(avgRms.toFixed(4)), 
+            sampleCount: r.rows.length 
+        });
+    } catch (e) {
+        console.error('/api/rci/average error:', e.message);
+        res.status(500).json({ error: e.message, avgRms: null });
+    }
+});
+
+// ── GET /api/rci/timeseries?period=24h|7d|30d ─────────────────────────────
+// Returns time-bucketed avg RMS values (left sensor, stored in g-units) DESC.
+// Wz computation is intentionally NOT done here — all Sperling math lives in
+// the frontend (graphs.js) so unit conversions stay in one place.
+//
+// Bucket granularity:  24h → 1-minute buckets  (yesterday, IST midnight→midnight)
+//                       7d → 1-hour  buckets   (last 7 days from latest record)
+//                      30d → 4-hour  buckets   (last 30 days from latest record)
+// Response: { period, freq_hz, points: [{ timestamp, rms_v_g }], sampleCount }
+app.get('/api/rci/timeseries', async (req, res) => {
+    const period = (req.query.period || '24h').toLowerCase();
+    let hours, truncUnit, maxPoints;
+    if      (period === '7d')  { hours = 7  * 24; truncUnit = 'hour';    maxPoints = 168;  }
+    else if (period === '30d') { hours = 30 * 24; truncUnit = '4 hours'; maxPoints = 180;  }
+    else                       { hours = 24;       truncUnit = 'minute';  maxPoints = 1440; }
+
+    try {
+        const dbNow = await getDBNow();
+        let cutoff, upperBound;
+
+        if (period === '24h') {
+            // Yesterday in IST: from midnight yesterday to midnight today
+            const istNow           = DateTime.fromJSDate(dbNow).setZone('Asia/Kolkata');
+            const startOfToday     = istNow.startOf('day');
+            const startOfYesterday = startOfToday.minus({ days: 1 });
+            cutoff     = startOfYesterday.toISO();
+            upperBound = startOfToday.toISO();
+        } else {
+            cutoff     = new Date(dbNow.getTime() - hours * 3600000).toISOString();
+            upperBound = dbNow.toISOString();
+        }
+
+        const r = await pool.query(`
+            SELECT
+                date_trunc($1, timestamp AT TIME ZONE 'Asia/Kolkata') AS bucket,
+                AVG(rms_v)  AS avg_rms_v,
+                COUNT(*)    AS sample_count
+            FROM realtime_data
+            WHERE sensor      = 'left'
+              AND rms_v IS NOT NULL
+              AND rms_v > 0
+              AND timestamp  >= $2
+              AND timestamp  <  $3
+            GROUP BY bucket
+            ORDER BY bucket DESC
+            LIMIT $4
+        `, [truncUnit, cutoff, upperBound, maxPoints]);
+
+        if (!r.rows.length) {
+            console.log(`[RCI timeseries] No data for period=${period}`);
+            return res.json({ period, freq_hz: 100, points: [], sampleCount: 0 });
+        }
+
+        // Return raw rms_v in g — Sperling Wz computation is done entirely in frontend
+        const points = r.rows.map(row => ({
+            timestamp: row.bucket,                          // IST bucket timestamp
+            rms_v_g:   parseFloat(parseFloat(row.avg_rms_v).toFixed(5)),
+            n:         parseInt(row.sample_count)           // samples in bucket (debug aid)
+        }));
+
+        console.log(`[RCI timeseries] period=${period} → ${points.length} buckets | ` +
+                    `rms range: ${Math.min(...points.map(p=>p.rms_v_g)).toFixed(4)}–` +
+                    `${Math.max(...points.map(p=>p.rms_v_g)).toFixed(4)} g`);
+
+        res.json({ period, freq_hz: 100, points, sampleCount: points.length });
+
+    } catch (e) {
+        console.error('/api/rci/timeseries error:', e.message);
+        res.status(500).json({ error: e.message, points: [] });
+    }
+});
+
 // POST /api/device/reset — publishes RESET command to the embedded device
 app.post('/api/device/reset', (_req, res) => {
     mqttClient.publish('adj/datalogger/client_request', 'RESET', { qos: 1 }, (err) => {
@@ -997,7 +1103,7 @@ server.listen(PORT, () => {
     console.log(`Local IP: ${LOCAL_IP}`);
     console.log(`Frontend: http://${LOCAL_IP}:${PORT}/index.html`);
 
-    console.log(`PostgreSQL: ${process.env.PG_HOST || 'localhost'}:${process.env.PG_PORT || 5433}/${process.env.PG_DB || 'uabams'}`);
+    console.log(`PostgreSQL: ${process.env.PG_HOST || 'localhost'}:${process.env.PG_PORT || 5432}/${process.env.PG_DB || 'uabams'}`);
 });
 
 // ── Reset endpoint ────────────────────────────────────────────────────────
