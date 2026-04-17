@@ -1,14 +1,38 @@
 /* =============================================================================
-   graphs.js — RailMonitor real-time graphs
-   Channel derivation from raw axes:
-     VERT = |Z|              (vertical peak, Z axis carries gravity + vibration)
-     LAT  = sqrt(X²+Y²)     (lateral peak, horizontal plane magnitude)
-   Applied per sensor side → 4 channels: AB-L-VERT, AB-L-LAT, AB-R-VERT, AB-R-LAT
+   graphs.js — FINAL VERSION (Dynamic 24h tab, offline/online aware)
 ============================================================================= */
 
 const SERVER_URL = window.location.origin;
 
-// ── Timestamp ─────────────────────────────────────────────────────────────
+// ── Hardware online detection ─────────────────────────────────────────────
+let lastSensorDataTime = 0;
+const DATA_TIMEOUT_MS = 10000;   // 10 seconds without data → offline
+let isHardwareOnline = false;
+
+function updateOnlineStatus() {
+    const now = Date.now();
+    const wasOnline = isHardwareOnline;
+    isHardwareOnline = (now - lastSensorDataTime) < DATA_TIMEOUT_MS;
+    
+    // If we just went offline and the 24h tab is active, switch to yesterday timeseries
+    if (wasOnline && !isHardwareOnline && currentPeriod === 1) {
+        console.log('[RCI] Hardware offline → loading yesterday timeseries');
+        activateRCITab(1);   // activateRCITab sees isHardwareOnline=false → calls fetchAndRenderRCITimeseries('24h')
+    }
+    // If we just came online and the 24h tab is active, clear to live rolling mode
+    if (!wasOnline && isHardwareOnline && currentPeriod === 1) {
+        console.log('[RCI] Hardware online → switching to LIVE rolling');
+        rciChart.data.labels           = emptyLabels(RCI_N);
+        rciChart.data.datasets[0].data = new Array(RCI_N).fill(null);
+        rciChart.options.scales.x.ticks.maxTicksLimit = 8;
+        rciChart.update();
+    }
+}
+
+// Check online status every 2 seconds
+setInterval(updateOnlineStatus, 2000);
+
+// ── Timestamp ticker ──────────────────────────────────────────────────────
 (function tickTimestamp() {
     const el = document.getElementById('currentTimestamp');
     if (el) {
@@ -25,130 +49,87 @@ const SERVER_URL = window.location.origin;
 
 // ── Channel derivation ────────────────────────────────────────────────────
 function getVert(x, y, z) { return Math.abs(z); }
-function getLat (x, y, z) { return Math.sqrt(x * x + y * y); }
+function getLat(x, y, z) { return Math.sqrt(x * x + y * y); }
 
-// ── Distance tracking (10 m steps, advances on each left-sensor packet) ───
-const BASE_DISTANCE_M = 1390 * 1000; // adjust to match your train's start coordinate
+// ── Distance tracking ─────────────────────────────────────────────────────
+const BASE_DISTANCE_M = 1390 * 1000;
 let distanceM = BASE_DISTANCE_M;
 
 function formatDistLabel(m) {
-    const km  = Math.floor(m / 1000);
+    const km = Math.floor(m / 1000);
     const rem = m % 1000;
     return km + '.' + String(rem).padStart(3, '0') + ' km';
-    // e.g. 1390.000 km → 1390.010 km → 1390.020 km ...
 }
-
 function advanceDistance() { distanceM += 10; }
 
-// ── Rolling buffer helpers ────────────────────────────────────────────────
-const DIST_N = 100;  // 100 × 10 m = 1 km window
+// ── Rolling buffers ───────────────────────────────────────────────────────
+const DIST_N = 100;
 const RAW_N  = 80;
 const RCI_N  = 60;
 
 function zeroBuf(n, v = 0) { return new Array(n).fill(v); }
-function emptyLabels(n)     { return new Array(n).fill(''); }
+function emptyLabels(n)    { return new Array(n).fill(''); }
 
-const initDistLabels = Array.from({ length: DIST_N },
-    (_, i) => formatDistLabel(BASE_DISTANCE_M + i * 10));
+const initDistLabels = Array.from({ length: DIST_N }, (_, i) => formatDistLabel(BASE_DISTANCE_M + i * 10));
 
-function roll(chart, dsIdx, value, label) {
-    chart.data.datasets[dsIdx].data.push(value);
-    chart.data.datasets[dsIdx].data.shift();
+function rollDataset(chart, datasetIndex, value, label) {
+    const ds = chart.data.datasets[datasetIndex];
+    ds.data.push(value);
+    ds.data.shift();
     if (label !== undefined) {
         chart.data.labels.push(label);
         chart.data.labels.shift();
     }
 }
 
-// ── Chart 1: Acceleration vs Distance — 4 channels ───────────────────────
-const distanceChart = new Chart(
-    document.getElementById('distanceChart').getContext('2d'), {
+// ── Distance Chart ────────────────────────────────────────────────────────
+const distanceChart = new Chart(document.getElementById('distanceChart').getContext('2d'), {
     type: 'line',
     data: {
         labels: [...initDistLabels],
         datasets: [
-            { label: 'AB-L-VERT', data: zeroBuf(DIST_N), borderColor: '#22c55e', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-            { label: 'AB-L-LAT',  data: zeroBuf(DIST_N), borderColor: '#eab308', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-            { label: 'AB-R-VERT', data: zeroBuf(DIST_N), borderColor: '#ef4444', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-            { label: 'AB-R-LAT',  data: zeroBuf(DIST_N), borderColor: '#8b5cf6', backgroundColor: 'transparent', borderWidth: 2, tension: 0.3, pointRadius: 0 }
+            { label: 'AB-L-VERT', data: zeroBuf(DIST_N), borderColor: '#22c55e', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+            { label: 'AB-L-LAT',  data: zeroBuf(DIST_N), borderColor: '#eab308', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+            { label: 'AB-R-VERT', data: zeroBuf(DIST_N), borderColor: '#ef4444', borderWidth: 2, tension: 0.3, pointRadius: 0 },
+            { label: 'AB-R-LAT',  data: zeroBuf(DIST_N), borderColor: '#8b5cf6', borderWidth: 2, tension: 0.3, pointRadius: 0 }
         ]
     },
     options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: false,
+        responsive: true, maintainAspectRatio: false, animation: false,
         plugins: { legend: { display: false } },
         scales: {
-            y: {
-                beginAtZero: true,
-                title: { display: true, text: 'Acceleration (g)' },
-                grid: { color: '#f1f5f9' },
-                ticks: { callback: v => v.toFixed(3) }
-            },
-            x: {
-                title: { display: true, text: 'Distance (km)' },
-                ticks: { maxRotation: 45, maxTicksLimit: 10 }
-            }
+            y: { beginAtZero: true, title: { display: true, text: 'Acceleration (g)' }, grid: { color: '#f1f5f9' }, ticks: { callback: v => v.toFixed(3) } },
+            x: { title: { display: true, text: 'Distance (km)' }, ticks: { maxRotation: 45, maxTicksLimit: 10 } }
         }
     }
 });
 
-// ── Raw axis subplot factory ───────────────────────────────────────────────
-// One chart per axis — single dataset, single Y-axis, no X labels
-// Each subplot is 80px tall, stacked vertically inside the card
-function makeSubplot(canvasId, color, initVal = 0) {
-    const canvas = document.getElementById(canvasId);
+// ── Raw subplots ──────────────────────────────────────────────────────────
+function makeSubplot(id, color, initVal = 0) {
+    const canvas = document.getElementById(id);
     if (!canvas) return null;
     return new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
             labels: zeroBuf(RAW_N, ''),
-            datasets: [{
-                data:            zeroBuf(RAW_N, initVal),
-                borderColor:     color,
-                backgroundColor: color + '18',
-                borderWidth:     1.5,
-                tension:         0.3,
-                pointRadius:     0,
-                fill:            true
-            }]
+            datasets: [{ data: zeroBuf(RAW_N, initVal), borderColor: color, backgroundColor: color + '18', borderWidth: 1.5, tension: 0.3, pointRadius: 0, fill: true }]
         },
         options: {
-            responsive:          true,
-            maintainAspectRatio: false,
-            animation:           false,
+            responsive: true, maintainAspectRatio: false, animation: false,
             plugins: { legend: { display: false }, tooltip: { enabled: false } },
             scales: {
-                y: {
-                    grid:  { color: '#f1f5f9' },
-                    ticks: {
-                        maxTicksLimit: 3,
-                        font:  { size: 9 },
-                        color: '#94a3b8',
-                        callback: v => v.toFixed(2)
-                    }
-                },
+                y: { grid: { color: '#f1f5f9' }, ticks: { maxTicksLimit: 3, font: { size: 9 }, color: '#94a3b8', callback: v => v.toFixed(2) } },
                 x: { display: false }
             }
         }
     });
 }
 
-// ── 6 subplot charts: X, Y, Z × 2 accelerometers ─────────────────────────
 const subplots = {
-    s1: {
-        x: makeSubplot('raw1X_chart', '#ef4444', 0),
-        y: makeSubplot('raw1Y_chart', '#22c55e', 0),
-        z: makeSubplot('raw1Z_chart', '#3b82f6', 9.8)
-    },
-    s2: {
-        x: makeSubplot('raw2X_chart', '#ef4444', 0),
-        y: makeSubplot('raw2Y_chart', '#22c55e', 0),
-        z: makeSubplot('raw2Z_chart', '#3b82f6', 9.8)
-    }
+    s1: { x: makeSubplot('raw1X_chart', '#ef4444', 0), y: makeSubplot('raw1Y_chart', '#22c55e', 0), z: makeSubplot('raw1Z_chart', '#3b82f6', 9.8) },
+    s2: { x: makeSubplot('raw2X_chart', '#ef4444', 0), y: makeSubplot('raw2Y_chart', '#22c55e', 0), z: makeSubplot('raw2Z_chart', '#3b82f6', 9.8) }
 };
 
-// Push one value into a subplot rolling buffer and update
 function pushSubplot(chart, value) {
     if (!chart) return;
     chart.data.datasets[0].data.shift();
@@ -156,56 +137,296 @@ function pushSubplot(chart, value) {
     chart.update('none');
 }
 
+// ── Sperling Ride Index Wz ────────────────────────────────────────────────
+// Input:  rms_g  — RMS acceleration in g-units (as stored in DB / sent by sensor)
+// Step 1: Convert g → cm/s²   (1 g = 981 cm/s²)
+// Step 2: Apply frequency weighting Bf at 100 Hz.
+//         For vertical vibration (ISO 2631 simplified Sperling):
+//           Bf ≈ 0.325 at f = 100 Hz  (weighting curve peak ~5–20 Hz, falls off above)
+//         This brings typical train values (rms ~0.1–1.3 g) into the 2–5 Wz range.
+// Step 3: Wz = 0.896 × (a_rms_cm × Bf)^0.3
+//
+// Why Bf = 0.325 and NOT 1.0?
+//   Bf = 1.0 is only correct when a_rms is already the frequency-weighted RMS (e.g.
+//   from a filtered signal).  Our sensor stores the raw RMS at 100 Hz, so we must
+//   apply the weighting factor manually.  At 100 Hz vertical: Bf ≈ 0.325.
+const SPERLING_FREQ_HZ = 100;
+const SPERLING_Bf      = 0.325;   // vertical weighting at 100 Hz
 
+function calculateSperlingWz(rmsG) {
+    if (rmsG == null || isNaN(rmsG) || rmsG <= 0) return null;
+    const a_rms_cms2 = rmsG * 981;                          // g  → cm/s²
+    const a_weighted = a_rms_cms2 * SPERLING_Bf;            // apply frequency weighting
+    const wz = 0.896 * Math.pow(a_weighted, 0.3);           // Sperling formula
+    return Math.round(wz * 100) / 100;                      // 2 d.p.
+}
 
-// ── Chart 3: Ride Comfort Index ───────────────────────────────────────────
-const rciChart = new Chart(
-    document.getElementById('rciChart').getContext('2d'), {
+function setRCIStatus(wz) {
+    const el = document.getElementById('rciStatus');
+    if (!el) return;
+    if (wz <= 2.0)      { el.textContent = 'Excellent'; el.className = 'rci-status status-excellent'; }
+    else if (wz <= 2.75){ el.textContent = 'Good';      el.className = 'rci-status status-good'; }
+    else if (wz <= 3.25){ el.textContent = 'Fair';      el.className = 'rci-status status-fair'; }
+    else if (wz <= 3.75){ el.textContent = 'Poor';      el.className = 'rci-status status-poor'; }
+    else                { el.textContent = 'Very Poor'; el.className = 'rci-status status-poor'; }
+}
+
+// ── RCI Chart ─────────────────────────────────────────────────────────────
+// Y-axis is NOT hard-capped — it auto-scales to actual Wz values.
+// Sperling comfort zones (reference lines drawn via annotation plugin or
+// background segment colours via custom plugin below):
+//   ≤ 2.0  Excellent  (green)
+//   ≤ 2.75 Good       (blue)
+//   ≤ 3.25 Fair       (yellow)
+//   ≤ 3.75 Poor       (orange)
+//   > 3.75 Very Poor  (red)
+
+// Inline background-band plugin — draws horizontal coloured bands behind the line
+const rciZoneBandPlugin = {
+    id: 'rciZoneBands',
+    beforeDraw(chart) {
+        const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
+        if (!y) return;
+        const bands = [
+            { from: 0,    to: 2.0,  color: 'rgba(34,197,94,0.08)'  },   // Excellent
+            { from: 2.0,  to: 2.75, color: 'rgba(59,130,246,0.08)' },   // Good
+            { from: 2.75, to: 3.25, color: 'rgba(234,179,8,0.10)'  },   // Fair
+            { from: 3.25, to: 3.75, color: 'rgba(249,115,22,0.12)' },   // Poor
+            { from: 3.75, to: 99,   color: 'rgba(239,68,68,0.12)'  },   // Very Poor
+        ];
+        ctx.save();
+        for (const b of bands) {
+            const yTop    = Math.max(y.getPixelForValue(b.to),  top);
+            const yBottom = Math.min(y.getPixelForValue(b.from), bottom);
+            if (yTop >= yBottom) continue;
+            ctx.fillStyle = b.color;
+            ctx.fillRect(left, yTop, right - left, yBottom - yTop);
+        }
+        ctx.restore();
+    }
+};
+
+const rciChart = new Chart(document.getElementById('rciChart').getContext('2d'), {
     type: 'line',
+    plugins: [rciZoneBandPlugin],
     data: {
         labels: emptyLabels(RCI_N),
         datasets: [{
-            label: 'RCI',
-            data: zeroBuf(RCI_N, 50),
+            label: 'Sperling Wz',
+            data: new Array(RCI_N).fill(null),   // null = no line until real data arrives
             borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59,130,246,0.1)',
-            borderWidth: 2, tension: 0.4, fill: true, pointRadius: 2
+            backgroundColor: 'rgba(59,130,246,0.06)',
+            borderWidth: 2.5,
+            tension: 0.4,
+            fill: false,
+            pointRadius: 0,
+            spanGaps: false                       // do not connect across nulls
         }]
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: false,
-        plugins: { legend: { display: false } },
+        animation: { duration: 300 },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: ctx => {
+                        const wz = ctx.parsed.y;
+                        const grade = wz <= 2.0  ? 'Excellent'
+                                    : wz <= 2.75 ? 'Good'
+                                    : wz <= 3.25 ? 'Fair'
+                                    : wz <= 3.75 ? 'Poor'
+                                    : 'Very Poor';
+                        return `Wz ${wz.toFixed(2)} — ${grade}`;
+                    }
+                }
+            }
+        },
         scales: {
-            y: { min: 0, max: 100, title: { display: true, text: 'RCI Score' }, grid: { color: '#f1f5f9' } },
-            x: { ticks: { maxRotation: 45, maxTicksLimit: 8 } }
+            y: {
+                // Dynamic — no hard min/max; Chart.js will fit to data
+                suggestedMin: 1.0,
+                suggestedMax: 5.0,
+                title: { display: true, text: 'Sperling Ride Index Wz' },
+                grid: { color: '#f1f5f9' },
+                ticks: { stepSize: 0.25, callback: v => v.toFixed(2) }
+            },
+            x: {
+                ticks: { maxRotation: 45, maxTicksLimit: 10 },
+                grid: { display: false }
+            }
         }
     }
 });
 
-// ── RCI: derived from VERT (Z peak) — ISO 2631 simplified ─────────────────
-// 0 g = 100 (perfect), 2 g = 0 (very poor)
-function vertToRCI(vert) {
-    return Math.round(Math.max(0, Math.min(100, 100 - (vert / 2.0) * 100)));
+// ── Tab state ─────────────────────────────────────────────────────────────
+let currentPeriod = 1;   // 1=24h, 7=7d, 30=30d
+
+// ── Fetch average Wz (for historical summary cards only) ──────────────────
+async function fetchAverageWz(days) {
+    try {
+        const res  = await fetch(`${SERVER_URL}/api/rci/average?days=${days}`);
+        const data = await res.json();
+        if (data.avgRms != null) return calculateSperlingWz(data.avgRms);
+        return null;
+    } catch (e) {
+        console.error(`[RCI] Failed to fetch ${days}d average:`, e);
+        return null;
+    }
 }
 
-function setRCIStatus(score) {
-    const el = document.getElementById('rciStatus');
-    if (!el) return;
-    if      (score >= 80) { el.textContent = 'Excellent'; el.className = 'rci-status status-excellent'; }
-    else if (score >= 60) { el.textContent = 'Good';      el.className = 'rci-status status-good'; }
-    else if (score >= 40) { el.textContent = 'Fair';      el.className = 'rci-status status-fair'; }
-    else                  { el.textContent = 'Poor';      el.className = 'rci-status status-poor'; }
+// ── Fetch RCI timeseries from DB and render on chart ──────────────────────
+// period: '24h' | '7d' | '30d'
+// API returns raw rms_v_g (g-units).  ALL Sperling computation is done here.
+async function fetchAndRenderRCITimeseries(period) {
+    try {
+        const res  = await fetch(`${SERVER_URL}/api/rci/timeseries?period=${period}`);
+        const data = await res.json();
+
+        if (!data.points || !data.points.length) {
+            console.warn(`[RCI] No timeseries data for period=${period}`);
+            return null;
+        }
+
+        // Server returns DESC (latest first) — reverse to chronological for chart
+        const ordered = [...data.points].reverse();
+
+        // ── Sperling Wz computation — ALL unit conversion done here ──────
+        // rms_v_g is in g-units  →  convert to cm/s²  →  apply Bf  →  Wz
+        // Formula: Wz = 0.896 × (rms_g × 981 × Bf)^0.3
+        //   where Bf = 0.325 for vertical vibration at FREQ_HZ = 100 Hz
+        const wzValues = ordered.map(p => {
+            const wz = calculateSperlingWz(p.rms_v_g);
+            return wz !== null ? wz : null;
+        });
+
+        // Filter nulls for stats only
+        const validWz = wzValues.filter(v => v !== null);
+        if (!validWz.length) {
+            console.warn(`[RCI] All Wz values null for period=${period}`);
+            return null;
+        }
+
+        // ── Build timestamp labels ────────────────────────────────────────
+        const labels = ordered.map(p => {
+            const d = new Date(p.timestamp);
+            if (period === '24h') {
+                return d.toLocaleTimeString('en-IN', {
+                    timeZone: 'Asia/Kolkata',
+                    hour: '2-digit', minute: '2-digit', hour12: false
+                });
+            } else if (period === '7d') {
+                return d.toLocaleDateString('en-IN', {
+                    timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit'
+                }) + ' ' + d.toLocaleTimeString('en-IN', {
+                    timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false
+                });
+            } else {
+                return d.toLocaleDateString('en-IN', {
+                    timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit'
+                });
+            }
+        });
+
+        // ── Push to chart — Y-axis will auto-scale to actual Wz range ────
+        rciChart.data.labels              = labels;
+        rciChart.data.datasets[0].data   = wzValues;
+        rciChart.options.scales.x.ticks.maxTicksLimit = period === '24h' ? 12 : (period === '7d' ? 14 : 15);
+        rciChart.update();
+
+        // ── Stats ────────────────────────────────────────────────────────
+        const sumWz   = validWz.reduce((a, b) => a + b, 0);
+        const avgWz   = sumWz / validWz.length;
+        const bestWz  = Math.min(...validWz);    // lower Wz = smoother ride
+        const worstWz = Math.max(...validWz);
+        const latestWz = wzValues[wzValues.length - 1] ?? wzValues.find(v => v !== null);
+
+        document.getElementById('rciCurrent').textContent = latestWz.toFixed(1);
+        setRCIStatus(latestWz);
+        document.getElementById('rciAvg').textContent   = avgWz.toFixed(1);
+        document.getElementById('rciBest').textContent  = bestWz.toFixed(1);
+        document.getElementById('rciWorst').textContent = worstWz.toFixed(1);
+
+        // Debug log with full unit chain
+        const sampleRmsG = ordered[ordered.length - 1]?.rms_v_g ?? 0;
+        console.log(
+            `[RCI] period=${period} | ${validWz.length} pts | ` +
+            `latest rms=${sampleRmsG}g → ` +
+            `a=${(sampleRmsG*981).toFixed(1)} cm/s² → ` +
+            `a_weighted=${(sampleRmsG*981*SPERLING_Bf).toFixed(1)} cm/s² (Bf=${SPERLING_Bf} @${SPERLING_FREQ_HZ}Hz) → ` +
+            `Wz=${latestWz.toFixed(2)} | avg=${avgWz.toFixed(2)} best=${bestWz.toFixed(2)} worst=${worstWz.toFixed(2)}`
+        );
+
+        return { points: ordered, wzValues, avgWz, bestWz, worstWz };
+
+    } catch (e) {
+        console.error(`[RCI] fetchAndRenderRCITimeseries(${period}) failed:`, e);
+        return null;
+    }
 }
 
-// ── Sensor cache (holds latest derived values per side) ───────────────────
+// ── Update historical summary cards ──────────────────────────────────────
+async function updateHistoricalCards() {
+    const yesterdayWz = await fetchAverageWz(1);
+    const weekWz      = await fetchAverageWz(7);
+    const monthWz     = await fetchAverageWz(30);
+    if (yesterdayWz !== null) document.getElementById('rciYesterday').textContent = yesterdayWz.toFixed(1);
+    if (weekWz      !== null) document.getElementById('rciWeekAvg').textContent   = weekWz.toFixed(1);
+    if (monthWz     !== null) document.getElementById('rciMonthAvg').textContent  = monthWz.toFixed(1);
+}
+
+// ── Activate tab (called on tab click or programmatically) ─────────────────
+async function activateRCITab(days) {
+    currentPeriod = days;
+    document.querySelectorAll('.rci-tab').forEach(btn => {
+        btn.classList.toggle('active', parseInt(btn.dataset.days) === days);
+    });
+
+    if (days === 1) {
+        if (isHardwareOnline) {
+            // Hardware ONLINE: live rolling mode — reset chart to empty, socket data will fill it
+            console.log('[RCI] 24h tab: hardware ONLINE → LIVE rolling');
+            rciChart.data.labels             = emptyLabels(RCI_N);
+            rciChart.data.datasets[0].data   = new Array(RCI_N).fill(null);
+            rciChart.options.scales.x.ticks.maxTicksLimit = 8;
+            rciChart.update();
+        } else {
+            // Hardware OFFLINE: show yesterday's timeseries from DB
+            console.log('[RCI] 24h tab: hardware OFFLINE → showing yesterday timeseries');
+            const result = await fetchAndRenderRCITimeseries('24h');
+            if (!result) {
+                // No data at all — show empty chart
+                rciChart.data.labels           = emptyLabels(RCI_N);
+                rciChart.data.datasets[0].data = new Array(RCI_N).fill(null);
+                rciChart.update();
+                document.getElementById('rciAvg').textContent   = '—';
+                document.getElementById('rciBest').textContent  = '—';
+                document.getElementById('rciWorst').textContent = '—';
+            }
+        }
+    } else {
+        // 7d or 30d: always fetch and render full timeseries from DB
+        const periodStr = days === 7 ? '7d' : '30d';
+        console.log(`[RCI] ${periodStr} tab → fetching timeseries`);
+        const result = await fetchAndRenderRCITimeseries(periodStr);
+        if (!result) {
+            rciChart.data.labels           = emptyLabels(RCI_N);
+            rciChart.data.datasets[0].data = new Array(RCI_N).fill(null);
+            rciChart.update();
+            document.getElementById('rciAvg').textContent   = '—';
+            document.getElementById('rciBest').textContent  = '—';
+            document.getElementById('rciWorst').textContent = '—';
+        }
+    }
+}
+
+// ── Sensor cache ──────────────────────────────────────────────────────────
 const cache = {
-    left:  { x: 0, y: 0, z: 0, vert: 0, lat: 0 },
-    right: { x: 0, y: 0, z: 0, vert: 0, lat: 0 }
+    left:  { x:0, y:0, z:0, vert:0, lat:0, rms: null },
+    right: { x:0, y:0, z:0, vert:0, lat:0, rms: null }
 };
 
-// ── Batch render via rAF ──────────────────────────────────────────────────
 let rafPending = false;
 function scheduleRender() {
     if (rafPending) return;
@@ -213,56 +434,63 @@ function scheduleRender() {
     requestAnimationFrame(() => {
         distanceChart.update('none');
         rciChart.update('none');
-        // subplots update inline via pushSubplot — no batch needed
         rafPending = false;
     });
 }
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────
-if (typeof io === 'undefined') {
-    console.error('[graphs] Socket.IO not loaded! Add this to graphs.html <head>:\n<script src="/socket.io/socket.io.js"><\/script>');
-}
+const socket = io(SERVER_URL, { transports: ['websocket', 'polling'], reconnectionDelay: 1000 });
 
-const socket = (typeof io !== 'undefined') ? io(SERVER_URL, {
-    transports: ['websocket', 'polling'],
-    reconnectionDelay: 1000,
-    reconnectionAttempts: Infinity
-}) : { on: () => {} }; // no-op fallback so rest of file doesn't crash
+socket.on('connect', () => console.log('[graphs] Socket connected ✓'));
+socket.on('disconnect', () => console.warn('[graphs] Disconnected'));
 
-socket.on('connect',       () => console.log('[graphs] Socket connected ✓'));
-socket.on('disconnect',    r  => console.warn('[graphs] Disconnected:', r));
-socket.on('connect_error', e  => console.error('[graphs] Error:', e.message));
-
-// ── Pre-fill all charts from DB on load ───────────────────────────────────
+// ── Initial load ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof window.preloadGraphHistory === 'function') {
         window.preloadGraphHistory(distanceChart, subplots);
     }
+
+    // Attach tab listeners
+    document.querySelectorAll('.rci-tab').forEach(btn => {
+        btn.addEventListener('click', () => activateRCITab(parseInt(btn.dataset.days)));
+    });
+
+    // Load historical cards
+    updateHistoricalCards();
+    // Refresh cards every hour
+    setInterval(updateHistoricalCards, 60 * 60 * 1000);
+
+    // Activate default tab (24h) – will decide live vs historical based on current online status
+    activateRCITab(1);
 });
 
+// ── Live data handler ─────────────────────────────────────────────────────
 socket.on('accelerometer-data', data => {
     const side = data.sensor;
     if (side !== 'left' && side !== 'right') return;
 
+    lastSensorDataTime = Date.now();
+    updateOnlineStatus();
+
     const x = data.x ?? 0;
     const y = data.y ?? 0;
     const z = data.z ?? 0;
+    const rmsV = (data.rmsV != null && data.rmsV > 0) ? data.rmsV : null;
 
-    // Derive channels from raw axes
-    const vert = getVert(x, y, z);   // |Z|
-    const lat  = getLat(x, y, z);    // sqrt(X²+Y²)
+    const vert = getVert(x, y, z);
+    const lat  = getLat(x, y, z);
 
-    // Update cache
+    // Update cache with raw values
     cache[side].x    = x;
     cache[side].y    = y;
     cache[side].z    = z;
     cache[side].vert = vert;
     cache[side].lat  = lat;
+    cache[side].rms  = rmsV;   // store RMS (g)
 
-    // ── Raw subplots: push X, Y, Z into their individual charts ──────────
+    // Raw subplots
     const sp  = side === 'left' ? subplots.s1 : subplots.s2;
-    const pfx = side === 'left' ? 'raw1'       : 'raw2';
-
+    const pfx = side === 'left' ? 'raw1' : 'raw2';
     pushSubplot(sp.x, x);
     pushSubplot(sp.y, y);
     pushSubplot(sp.z, z);
@@ -270,33 +498,68 @@ socket.on('accelerometer-data', data => {
     document.getElementById(pfx + 'X').textContent = x.toFixed(4) + ' g';
     document.getElementById(pfx + 'Y').textContent = y.toFixed(4) + ' g';
     document.getElementById(pfx + 'Z').textContent = z.toFixed(4) + ' g';
-    const now = new Date();
-    document.getElementById(pfx + 'RefreshTime').textContent = '🕐 ' + now.toLocaleTimeString('en-IN', {hour12:false}) + '  ' + now.toLocaleDateString('en-IN');
 
-    // ── Distance chart: left sensor drives label + distance advance ───────
+    const now = new Date();
+    document.getElementById(pfx + 'RefreshTime').textContent = '🕐 ' + now.toLocaleTimeString('en-IN', {hour12:false}) + ' ' + now.toLocaleDateString('en-IN');
+
+    // ── Distance chart (left sensor drives distance) ──────────────────────
     if (side === 'left') {
         advanceDistance();
         const distLabel = formatDistLabel(distanceM);
 
-        roll(distanceChart, 0, vert,              distLabel); // AB-L-VERT
-        roll(distanceChart, 1, lat);                          // AB-L-LAT
-        roll(distanceChart, 2, cache.right.vert);             // AB-R-VERT (latest cached)
-        roll(distanceChart, 3, cache.right.lat);              // AB-R-LAT  (latest cached)
-
-        // ── RCI from left VERT ────────────────────────────────────────────
-        const rci = vertToRCI(vert);
-        roll(rciChart, 0, rci, distLabel);
-
-        document.getElementById('rciCurrent').textContent = rci;
-        setRCIStatus(rci);
-
-        const d = rciChart.data.datasets[0].data;
-        document.getElementById('rciAvg').textContent   = Math.round(d.reduce((a, b) => a + b, 0) / d.length);
-        document.getElementById('rciBest').textContent  = Math.round(Math.max(...d));
-        document.getElementById('rciWorst').textContent = Math.round(Math.min(...d));
+        rollDataset(distanceChart, 0, vert, distLabel);
+        rollDataset(distanceChart, 1, lat);
+        rollDataset(distanceChart, 2, cache.right.vert);
+        rollDataset(distanceChart, 3, cache.right.lat);
     }
 
-    // ── Legend: live derived values ───────────────────────────────────────
+    // ── RCI: Use average RMS from both accelerometers ─────────────────────
+    const leftRms  = cache.left.rms;
+    const rightRms = cache.right.rms;
+    let avgRms = null;
+
+    if (leftRms !== null && rightRms !== null) {
+        avgRms = (leftRms + rightRms) / 2;
+    } else if (leftRms !== null) {
+        avgRms = leftRms;
+    } else if (rightRms !== null) {
+        avgRms = rightRms;
+    } else {
+        // fallback to vertical g if RMS not available (should rarely happen)
+        avgRms = (cache.left.vert + cache.right.vert) / 2;
+    }
+
+    const wz = calculateSperlingWz(avgRms);
+
+    if (wz !== null) {
+        if (currentPeriod === 1 && isHardwareOnline) {
+            // Live rolling update (only on left packet to keep consistent time step)
+            if (side === 'left') {
+                const distLabel = formatDistLabel(distanceM);
+                rollDataset(rciChart, 0, wz, distLabel);
+                const rciData = rciChart.data.datasets[0].data.filter(v => v !== null);
+                if (rciData.length) {
+                    const avgRCI  = rciData.reduce((a, b) => a + b, 0) / rciData.length;
+                    const bestWz  = Math.min(...rciData);
+                    const worstWz = Math.max(...rciData);
+                    document.getElementById('rciCurrent').textContent = wz.toFixed(1);
+                    document.getElementById('rciAvg').textContent    = avgRCI.toFixed(1);
+                    document.getElementById('rciBest').textContent   = bestWz.toFixed(1);
+                    document.getElementById('rciWorst').textContent  = worstWz.toFixed(1);
+                }
+            } else {
+                // Right sensor only updates current reading, chart waits for left
+                document.getElementById('rciCurrent').textContent = wz.toFixed(1);
+            }
+            setRCIStatus(wz);
+        } else {
+            // Not in live mode – just update the current reading
+            document.getElementById('rciCurrent').textContent = wz.toFixed(1);
+            setRCIStatus(wz);
+        }
+    }
+
+    // Update legend values (always)
     document.getElementById('distVal1').textContent = cache.left.vert.toFixed(4)  + ' g';
     document.getElementById('distVal2').textContent = cache.left.lat.toFixed(4)   + ' g';
     document.getElementById('distVal3').textContent = cache.right.vert.toFixed(4) + ' g';
@@ -305,71 +568,19 @@ socket.on('accelerometer-data', data => {
     scheduleRender();
 });
 
-// ── Control buttons ───────────────────────────────────────────────────────
-function setDistanceRange(range) {
-    document.querySelectorAll('.graph-controls .graph-btn').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
-}
-function setRCIRange(range) {
-    document.querySelectorAll('.graph-controls .graph-btn').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
-}
-window.setDistanceRange = setDistanceRange;
-window.setRCIRange      = setRCIRange;
-
-// ── Threshold sync — fetch from server, update live on config change ───────
-let graphThresholds = { p1Min: 5, p1Max: 10, p2Min: 10, p2Max: 20, p3Min: 20 };
-
-(async function loadGraphThresholds() {
-    try {
-        const res = await fetch(`${SERVER_URL}/api/thresholds`);
-        graphThresholds = await res.json();
-        console.log('[graphs] Thresholds loaded:', graphThresholds);
-    } catch (e) {
-        console.warn('[graphs] Using default thresholds');
-    }
-})();
-
-socket.on('thresholds-updated', (t) => {
-    graphThresholds = t;
-    console.log('[graphs] Thresholds updated live:', t);
-});
-
-// ── Raw charts DB poll (every 3s, no Socket.IO) ───────────────────────────
-// lv = left-vertical (Z), ll = left-lateral (X), rv = right-vertical (Z), rl = right-lateral (X)
+// ── Raw DB polling (fallback) ─────────────────────────────────────────────
 async function fetchRawFromDB() {
     try {
         const data = await fetch(`${SERVER_URL}/api/acceleration/channels?minutes=60`).then(r => r.json());
         if (!data.length) return;
-
-        // Use last 60 points to fill the rolling subplot charts
         const slice = data.slice(-60);
         slice.forEach(pt => {
-            if (pt.lv != null) { pushSubplot(subplots.s1.z, pt.lv); }
-            if (pt.ll != null) { pushSubplot(subplots.s1.x, pt.ll); }
-            if (pt.rv != null) { pushSubplot(subplots.s2.z, pt.rv); }
-            if (pt.rl != null) { pushSubplot(subplots.s2.x, pt.rl); }
+            if (pt.lv != null) pushSubplot(subplots.s1.z, pt.lv);
+            if (pt.ll != null) pushSubplot(subplots.s1.x, pt.ll);
+            if (pt.rv != null) pushSubplot(subplots.s2.z, pt.rv);
+            if (pt.rl != null) pushSubplot(subplots.s2.x, pt.rl);
         });
-
-        // Latest values for the readout labels
-        const latest = data[data.length - 1];
-        const now    = new Date();
-        const ts     = '🕐 ' + now.toLocaleTimeString('en-IN', {hour12:false}) + '  ' + now.toLocaleDateString('en-IN');
-
-        if (latest.lv != null || latest.ll != null) {
-            document.getElementById('raw1X').textContent = (latest.ll ?? 0).toFixed(4) + ' g';
-            document.getElementById('raw1Y').textContent = '0.0000 g';
-            document.getElementById('raw1Z').textContent = (latest.lv ?? 0).toFixed(4) + ' g';
-            document.getElementById('raw1RefreshTime').textContent = ts;
-        }
-        if (latest.rv != null || latest.rl != null) {
-            document.getElementById('raw2X').textContent = (latest.rl ?? 0).toFixed(4) + ' g';
-            document.getElementById('raw2Y').textContent = '0.0000 g';
-            document.getElementById('raw2Z').textContent = (latest.rv ?? 0).toFixed(4) + ' g';
-            document.getElementById('raw2RefreshTime').textContent = ts;
-        }
     } catch (e) { console.error('[raw-db]', e); }
 }
-
 fetchRawFromDB();
 setInterval(fetchRawFromDB, 3000);
