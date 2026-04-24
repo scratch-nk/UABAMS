@@ -260,16 +260,26 @@ fetchActiveAlerts();
 fetchSystemHealth();
 fetchGPS();
 
-// ── Poll everything from DB every 3s ─────────────────────────────────────
-setInterval(() => {
-    fetchChartFromDB();
-    fetchActiveSensors();
-    fetchSystemHealth();
-    fetchGPS();
-}, 3000);
-
-// Uptime and alerts are slower-moving — poll every 15s
-setInterval(() => {
+function getChartPollMs() {
+    if (typeof AccelConfig === 'undefined') return 3000;
+    const avg = (AccelConfig.getOdr(1) + AccelConfig.getOdr(2)) / 2;
+    if (avg >= 150) return 3000;
+    if (avg >= 75)  return 6000;
+    return 12000;
+}
+let _mgmtPollTimer = null;
+function restartMgmtPoll() {
+    if (_mgmtPollTimer) clearInterval(_mgmtPollTimer);
+    _mgmtPollTimer = setInterval(() => { 
+        fetchChartFromDB();
+        fetchActiveSensors();
+        fetchSystemHealth();
+        fetchGPS();
+    }, getChartPollMs());
+}
+if (typeof AccelConfig !== 'undefined') AccelConfig.onChange(restartMgmtPoll);
+restartMgmtPoll();
+setInterval(() => { 
     fetchUptime();
-    fetchActiveAlerts();
-}, 15000);
+    fetchActiveAlerts(); 
+    }, 15000);

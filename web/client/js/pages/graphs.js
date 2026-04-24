@@ -1,5 +1,8 @@
 /* =============================================================================
    graphs.js — FINAL VERSION (Dynamic 24h tab, offline/online aware)
+   - 24h tab: LIVE rolling when hardware online, else yesterday's average line
+   - 7d / 30d tabs: always show average line from DB
+   - Historical cards (yesterday, 7d, 30d) always populated
 ============================================================================= */
 
 const SERVER_URL = window.location.origin;
@@ -150,15 +153,25 @@ function pushSubplot(chart, value) {
 //   Bf = 1.0 is only correct when a_rms is already the frequency-weighted RMS (e.g.
 //   from a filtered signal).  Our sensor stores the raw RMS at 100 Hz, so we must
 //   apply the weighting factor manually.  At 100 Hz vertical: Bf ≈ 0.325.
-const SPERLING_FREQ_HZ = 100;
-const SPERLING_Bf      = 0.325;   // vertical weighting at 100 Hz
+// ── Dynamic Sperling Bf — tracks configured ODR ───────────────────────────
+// Bf (frequency weighting) varies with the ODR set by the user in settings:
+//    50 Hz → Bf = 0.48   (closer to 5–20 Hz sensitivity band)
+//   100 Hz → Bf = 0.325  (original calibrated value)
+//   200 Hz → Bf = 0.18   (far above sensitivity band, attenuated)
+let _configuredOdrHz = 100;   // updated from /api/odr-config on load + socket event
+
+function _getSperlingBf() {
+    if (_configuredOdrHz >= 150) return 0.18;
+    if (_configuredOdrHz >= 75)  return 0.325;
+    return 0.48;
+}
 
 function calculateSperlingWz(rmsG) {
     if (rmsG == null || isNaN(rmsG) || rmsG <= 0) return null;
-    const a_rms_cms2 = rmsG * 981;                          // g  → cm/s²
-    const a_weighted = a_rms_cms2 * SPERLING_Bf;            // apply frequency weighting
-    const wz = 0.896 * Math.pow(a_weighted, 0.3);           // Sperling formula
-    return Math.round(wz * 100) / 100;                      // 2 d.p.
+    const a_rms_cms2 = rmsG * 981;                            // g  → cm/s²
+    const a_weighted = a_rms_cms2 * _getSperlingBf();         // apply configured frequency weighting
+    const wz = 0.896 * Math.pow(a_weighted, 0.3);             // Sperling formula
+    return Math.round(wz * 100) / 100;                        // 2 d.p.
 }
 
 function setRCIStatus(wz) {
@@ -350,11 +363,12 @@ async function fetchAndRenderRCITimeseries(period) {
 
         // Debug log with full unit chain
         const sampleRmsG = ordered[ordered.length - 1]?.rms_v_g ?? 0;
+        const _bf = _getSperlingBf();
         console.log(
-            `[RCI] period=${period} | ${validWz.length} pts | ` +
+            `[RCI] period=${period} | ODR=${_configuredOdrHz}Hz Bf=${_bf} | ${validWz.length} pts | ` +
             `latest rms=${sampleRmsG}g → ` +
             `a=${(sampleRmsG*981).toFixed(1)} cm/s² → ` +
-            `a_weighted=${(sampleRmsG*981*SPERLING_Bf).toFixed(1)} cm/s² (Bf=${SPERLING_Bf} @${SPERLING_FREQ_HZ}Hz) → ` +
+            `a_weighted=${(sampleRmsG*981*_bf).toFixed(1)} cm/s² → ` +
             `Wz=${latestWz.toFixed(2)} | avg=${avgWz.toFixed(2)} best=${bestWz.toFixed(2)} worst=${worstWz.toFixed(2)}`
         );
 
@@ -444,6 +458,15 @@ const socket = io(SERVER_URL, { transports: ['websocket', 'polling'], reconnecti
 socket.on('connect', () => console.log('[graphs] Socket connected ✓'));
 socket.on('disconnect', () => console.warn('[graphs] Disconnected'));
 
+// ── Sync Sperling Bf when ODR changes from settings page ──────────────────
+socket.on('odr-config-changed', (cfg) => {
+    const avgOdr = (cfg.accel1 + cfg.accel2) / 2;
+    _configuredOdrHz = avgOdr;
+    console.log(`[graphs] ODR changed → ${avgOdr}Hz  Bf=${_getSperlingBf()} — refreshing RCI`);
+    const periodStr = currentPeriod === 1 ? '24h' : currentPeriod === 7 ? '7d' : '30d';
+    if (currentPeriod !== 1 || !isHardwareOnline) fetchAndRenderRCITimeseries(periodStr);
+});
+
 // ── Initial load ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof window.preloadGraphHistory === 'function') {
@@ -462,6 +485,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Activate default tab (24h) – will decide live vs historical based on current online status
     activateRCITab(1);
+
+    // Fetch configured ODR so Sperling Bf is correct from the first frame
+    fetch(`${SERVER_URL}/api/odr-config`)
+        .then(r => r.json())
+        .then(cfg => {
+            _configuredOdrHz = (cfg.accel1 + cfg.accel2) / 2;
+            console.log(`[graphs] ODR loaded → ${_configuredOdrHz}Hz  Bf=${_getSperlingBf()}`);
+        })
+        .catch(() => {});
 });
 
 // ── Live data handler ─────────────────────────────────────────────────────
