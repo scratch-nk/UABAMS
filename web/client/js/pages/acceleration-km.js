@@ -7,11 +7,19 @@ const RECORDS_PER_BLOCK = 50;
 const BLOCKS_PER_KM = 7;
 const RECORDS_PER_KM = RECORDS_PER_BLOCK * BLOCKS_PER_KM;
 
+function getRecordsPerKm() {
+    if (typeof AccelConfig === 'undefined') return RECORDS_PER_KM;
+    const avg = (AccelConfig.getOdr(1) + AccelConfig.getOdr(2)) / 2;
+    return Math.max(Math.round(RECORDS_PER_KM / Math.round(200 / avg)), 1);
+}
+
 let isLive = false;
 let lastCard = null;
 let allDocs = [];
 let todayDocs = [];
 let lastFetchTime = 0;
+let limitsConfig = null;   // loaded from /api/limits-config
+
 
 // Tab / Section toggle
 let activeSections = { blocks: true, peakDist: false, worstPeaks: false };
@@ -73,23 +81,49 @@ function computeBlock(docs, blkIdx) {
     };
 }
 
+// ─── Limits config ───────────────────────────────────────────────────────────
+async function loadLimitsConfig() {
+    try {
+        const res = await fetch('/api/limits-config');
+        if (!res.ok) return;
+        limitsConfig = await res.json();
+        console.log('[km] Limits config loaded:', limitsConfig);
+    } catch (e) {
+        console.warn('[km] Could not load limits config:', e.message);
+    }
+}
+
+// Returns { p1, p2, p3 } thresholds for a given side+axis from LC config.
+// Falls back to hardcoded values if not configured.
+function getLCPeakThresholds(side, axis) {
+    const accelKey = side === 'right' ? 'accel2' : 'accel1';
+    const axisKey  = axis === 'V'     ? 'vert'   : 'lat';
+    const lc = limitsConfig?.limitClass?.[accelKey]?.[axisKey]?.peak;
+    if (lc?.p1 != null && lc?.p2 != null && lc?.p3 != null) return lc;
+    // Fallback to original hardcoded thresholds
+    return { p1: 5, p2: 10, p3: 20 };
+}
+
+
+
 function computePeakDist(docs) {
     const out = {
         left:  { V: { P1:0, P2:0, P3:0 }, L: { P1:0, P2:0, P3:0 } },
         right: { V: { P1:0, P2:0, P3:0 }, L: { P1:0, P2:0, P3:0 } },
     };
-    const getPClass = (g) => {
+    // Classify a value against { p1, p2, p3 } thresholds from LC config (or fallback)
+    const getPClass = (g, thresholds) => {
         if (g == null || isNaN(g)) return null;
-        g = Math.abs(g);
-        if (g >= 20) return 'P3';
-        if (g >= 10) return 'P2';
-        if (g >= 5)  return 'P1';
+        const v = Math.abs(g);
+        if (v >= +thresholds.p3) return 'P3';
+        if (v >= +thresholds.p2) return 'P2';
+        if (v >= +thresholds.p1) return 'P1';
         return null;
     };
     for (const d of docs) {
         const side = d.device_id === 'right' ? 'right' : 'left';
-        const pV = getPClass(d.z_axis);
-        const pL = getPClass(d.x_axis);
+        const pV = getPClass(d.z_axis, getLCPeakThresholds(side, 'V'));
+        const pL = getPClass(d.x_axis, getLCPeakThresholds(side, 'L'));
         if (pV) out[side].V[pV]++;
         if (pL) out[side].L[pL]++;
     }
@@ -120,6 +154,7 @@ function computeWorstPeaks(docs) {
 }
 
 function buildCard(docs, kmIndex, hwLive) {
+    const RECORDS_PER_KM = getRecordsPerKm(); // shadows outer const — ODR-adjusted
     const isPartial = docs.length < RECORDS_PER_KM;
     const doneBlocks = Math.floor(docs.length / RECORDS_PER_BLOCK);
     const blocks = [];
@@ -185,17 +220,39 @@ function renderBlocksTable(blocks) {
 function renderPeakDistTable(peakDist) {
     if (!peakDist) return '<p class="no-data">No distribution data yet.</p>';
     const l = peakDist.left, r = peakDist.right;
+
+    // Show which thresholds are driving the classification
+    const lcConfigured = limitsConfig?.limitClass != null;
+    const thresholdNote = lcConfigured
+        ? (() => {
+            const t = getLCPeakThresholds('left', 'V');   // representative row
+            return `<div style="font-size:10px;color:#64748b;margin-bottom:6px;font-style:italic;">
+                Using LC thresholds — P1 ≥ ${t.p1}g &nbsp;·&nbsp; P2 ≥ ${t.p2}g &nbsp;·&nbsp; P3 ≥ ${t.p3}g
+                <span style="color:#94a3b8">(per axis — hover row for details)</span>
+            </div>`;
+          })()
+        : `<div style="font-size:10px;color:#c2410c;margin-bottom:6px;font-style:italic;">
+               ⚠ Limit Class not configured — using defaults (P1≥5g, P2≥10g, P3≥20g).
+               <a href="sampling-frequency.html" style="color:#c2410c;">Configure →</a>
+           </div>`;
+
     const bandRow = band => {
         const cls = band.toLowerCase();
+        // Per-axis thresholds for tooltip
+        const tip = (side, axis) => {
+            const t = getLCPeakThresholds(side, axis);
+            return `${band} ≥ ${t[band.toLowerCase()]}g`;
+        };
         return `<tr>
             <td><span class="badge badge-${cls}">${band}</span></td>
-            <td class="count-badge count-${cls}">${l.V[band]||0}</td>
-            <td class="count-badge count-${cls}">${l.L[band]||0}</td>
-            <td class="count-badge count-${cls}">${r.V[band]||0}</td>
-            <td class="count-badge count-${cls}">${r.L[band]||0}</td>
+            <td class="count-badge count-${cls}" title="${tip('left','V')}">${l.V[band]||0}</td>
+            <td class="count-badge count-${cls}" title="${tip('left','L')}">${l.L[band]||0}</td>
+            <td class="count-badge count-${cls}" title="${tip('right','V')}">${r.V[band]||0}</td>
+            <td class="count-badge count-${cls}" title="${tip('right','L')}">${r.L[band]||0}</td>
         </tr>`;
     };
     return `<div class="table-container">
+        ${thresholdNote}
         <table>
             <thead><tr><th rowspan="2">BANDS</th><th colspan="2">LEFT</th><th colspan="2">RIGHT</th></tr>
             <tr><th>V</th><th>L</th><th>V</th><th>L</th></tr></thead>
@@ -334,6 +391,9 @@ async function fetchLiveStatus() {
 }
 
 async function updateReport() {
+    const RECORDS_PER_KM = getRecordsPerKm();
+    // 0. Fetch limits config (keeps peak distribution in sync with configuration page)
+    await loadLimitsConfig();
     // 1. Fetch raw data
     allDocs = await fetchRawData();
     if (!allDocs.length) {
@@ -474,6 +534,8 @@ function exportCSV() {
 
 // Helper function to generate the actual CSV
 function generateFullDayCSV(docsForDay, reportDate) {
+    
+    const RECORDS_PER_KM = getRecordsPerKm();
     if (docsForDay.length === 0) return;
 
     const rows = [];
@@ -580,5 +642,11 @@ window.onload = async function () {
     document.getElementById('worstPeaksTab').classList.remove('active');
 
     await poll();
+    if (typeof AccelConfig !== 'undefined') {
+    AccelConfig.onChange(() => {
+        console.log('[accel-km] ODR changed → reprocessing');
+        poll();
+    });
+}
     setInterval(poll, POLL_MS);
 };

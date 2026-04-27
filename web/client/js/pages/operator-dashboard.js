@@ -439,6 +439,10 @@ fetchLatestTimestamps();
 // Socket updates for accelerometer data (updates timestamps)
 socket.on('accelerometer-data', (data) => {
     if (!isLiveStreaming) return;
+    // ODR decimation gate
+    const _sid = data.sensor === 'left' ? 1 : data.sensor === 'right' ? 2 : null;
+    if (_sid && typeof AccelConfig !== 'undefined' && !AccelConfig.shouldAccept(_sid)) return;
+    
     if (data.sensor === 'left') {
         latestLeft = data;
         fillAccel('accel1', data);

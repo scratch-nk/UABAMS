@@ -17,7 +17,8 @@ return DateTime.now().setZone(TIMEZONE).toFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
 }
 
 // ── Persistent JSON fallback ──────────────────────────────────────────────
-const PEAKS_LOG_FILE = path.join(__dirname, 'peaks_log.json');
+const PEAKS_LOG_FILE    = path.join(__dirname, 'peaks_log.json');
+const LIMITS_CONFIG_FILE = path.join(__dirname, 'limits_config.json');
 
 function getLocalIP() {
     const interfaces = os.networkInterfaces();
@@ -47,6 +48,21 @@ function savePeaksLog(log) {
 
 let peaksLog = loadPeaksLog();
 console.log(`Loaded ${peaksLog.length} existing impact records from JSON fallback`);
+
+function loadLimitsConfig() {
+    try {
+        if (fs.existsSync(LIMITS_CONFIG_FILE))
+            return JSON.parse(fs.readFileSync(LIMITS_CONFIG_FILE, 'utf8'));
+    } catch (e) { console.error('limits_config.json read error:', e.message); }
+    return { uml: null, limitClass: null };
+}
+function saveLimitsConfig(cfg) {
+    try { fs.writeFileSync(LIMITS_CONFIG_FILE, JSON.stringify(cfg, null, 2)); }
+    catch (e) { console.error('limits_config.json write error:', e.message); }
+}
+
+let limitsConfig = loadLimitsConfig();
+console.log('[limits] Config loaded:', JSON.stringify(limitsConfig));
 
 // ── Express / Socket.IO ───────────────────────────────────────────────────
 const { Pool } = require('pg');
@@ -183,6 +199,22 @@ setInterval(() => getDBNow(), 30000);
 let lastDataTimestamp = null;
 let mqttConnected     = false;
 const mqttClient = mqtt.connect(`mqtt://${process.env.MQTT_HOST}:${process.env.MQTT_PORT}`);
+
+// ── ODR decimation — server-side emit gating ──────────────────────────────
+// Hardware always publishes at 200 Hz. odrConfig controls how many of those
+// messages are forwarded to all Socket.IO clients.
+//   200 Hz → factor 1 → every message emitted
+//   100 Hz → factor 2 → 1 of every 2 messages emitted
+//    50 Hz → factor 4 → 1 of every 4 messages emitted
+let odrConfig   = { accel1: 100, accel2: 100 };
+const odrCounters = { accel1: 0, accel2: 0 };
+
+function shouldEmit(sensorKey) {
+    const odr    = odrConfig[sensorKey] || 200;
+    const factor = Math.round(200 / odr);
+    odrCounters[sensorKey] = (odrCounters[sensorKey] + 1) % factor;
+    return odrCounters[sensorKey] === 0;
+}
 
 // ── Health parser ─────────────────────────────────────────────────────────
 // TODO: Details of peripherals to be fetched from controller encoded in msg.
@@ -1083,13 +1115,17 @@ mqttClient.on('message', async (topic, message) => {
             }).catch(e => console.error('stats broadcast error:', e.message));
         }
 
-        // Broadcast raw sensor data
-        io.emit('accelerometer-data', {
-            sensor: sensorSide, x, y, z, gForce,
-            rmsV, rmsL, sdV, sdL, p2pV, p2pL, peak, timestamp
-        });
-
-        console.log(`Broadcast: X=${x}, Y=${y}, Z=${z}, gForce=${gForce.toFixed(4)}g`);
+        // Broadcast raw sensor data — gated by server-side ODR decimation
+        const _odrKey = sensorSide === 'left' ? 'accel1' : 'accel2';
+        if (shouldEmit(_odrKey)) {
+            io.emit('accelerometer-data', {
+                sensor: sensorSide, x, y, z, gForce,
+                rmsV, rmsL, sdV, sdL, p2pV, p2pL, peak, timestamp
+            });
+            console.log(`Broadcast: X=${x}, Y=${y}, Z=${z}, gForce=${gForce.toFixed(4)}g`);
+        } else {
+            console.log(`[ODR] Dropped: ${sensorSide} @ ${odrConfig[_odrKey]}Hz`);
+        }
 
     } catch (error) {
         console.error('MQTT message error:', error);
@@ -1218,4 +1254,48 @@ app.get('/api/impacts/export/csv', async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Cache-Control', 'no-cache');
     res.send(csv);
+});
+
+// ── ODR config endpoints ──────────────────────────────────────────────────
+// GET /api/odr-config
+// Returns the current ODR setting for both accelerometers.
+app.get('/api/odr-config', (req, res) => {
+    res.json(odrConfig);
+});
+
+// POST /api/odr-config  body: { accel1: 100, accel2: 50 }
+// Updates ODR and resets counters so the next sample is always accepted.
+// Broadcasts 'odr-config-changed' to all connected clients.
+app.post('/api/odr-config', (req, res) => {
+    const { accel1, accel2 } = req.body;
+    const valid = [50, 100, 200];
+    if (!valid.includes(Number(accel1)) || !valid.includes(Number(accel2))) {
+        return res.status(400).json({ error: 'ODR must be 50, 100, or 200 Hz' });
+    }
+    odrConfig.accel1   = Number(accel1);
+    odrConfig.accel2   = Number(accel2);
+    odrCounters.accel1 = 0;   // reset so next sample is always accepted
+    odrCounters.accel2 = 0;
+    console.log(`[ODR] Updated → accel1=${odrConfig.accel1}Hz  accel2=${odrConfig.accel2}Hz`);
+    io.emit('odr-config-changed', odrConfig);   // notify all open pages
+    res.json({ success: true, odrConfig });
+});
+
+// ── Limits config endpoints ───────────────────────────────────────────────
+// GET /api/limits-config
+// Returns the current UML and Limit Class configuration.
+app.get('/api/limits-config', (req, res) => {
+    res.json(limitsConfig);
+});
+
+// POST /api/limits-config  body: { uml: {...}, limitClass: {...} }
+// Saves UML and Limit Class values to memory + disk and notifies all pages.
+app.post('/api/limits-config', (req, res) => {
+    const { uml, limitClass } = req.body;
+    limitsConfig.uml        = uml        ?? null;
+    limitsConfig.limitClass = limitClass ?? null;
+    saveLimitsConfig(limitsConfig);
+    console.log('[limits] Config updated and saved to limits_config.json');
+    io.emit('limits-config-changed', limitsConfig);   // notify all open pages
+    res.json({ success: true, limitsConfig });
 });
