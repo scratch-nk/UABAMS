@@ -101,6 +101,19 @@ body {
     background: #f8fafc;
     border-radius: 12px;
 }
+.rci-tab {
+    padding: 6px 16px;
+    border: none;
+    background: #f1f5f9;
+    border-radius: 9999px;
+    margin-right: 6px;
+    cursor: pointer;
+    font-weight: 500;
+}
+.rci-tab.active {
+    background: #3b82f6;
+    color: white;
+}
 
 .rci-stat { flex: 1; text-align: center; }
 .rci-stat-label { font-size: 0.8rem; color: #64748b; text-transform: uppercase; margin-bottom: 4px; }

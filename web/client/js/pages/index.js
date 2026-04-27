@@ -13,9 +13,32 @@ const sensorCache = {
 };
 
 // ── Distance tracking (meter-wise, increments per data packet) ────────────
-// Server sends data at ~500ms intervals; we track distance using coordinate
-// field from GPS if available, otherwise we just count packets × ~5m
 let currentDistanceM = 0; // meters, updated from GPS or estimated
+
+// ── Header connection status ─────────────────────────────────────────────
+let lastSensorDataTime = 0;
+const DATA_TIMEOUT_MS = 10000; // 10 seconds
+
+function updateHeaderStatus() {
+    const dot = document.querySelector('.mqtt-dot');
+    const text = document.getElementById('mqttText');
+    if (!dot || !text) return;
+
+    const connected = socket && socket.connected;
+    const hasRecentData = (Date.now() - lastSensorDataTime) < DATA_TIMEOUT_MS;
+
+    if (connected && hasRecentData) {
+        text.textContent = 'LIVE';
+        text.style.color = '#22c55e';
+        dot.style.background = '#22c55e';
+        dot.classList.add('pulsing');
+    } else {
+        text.textContent = 'OFFLINE';
+        text.style.color = '#ef4444';
+        dot.style.background = '#ef4444';
+        dot.classList.remove('pulsing');
+    }
+}
 
 // ── Clock ─────────────────────────────────────────────────────────────────
 function updateTime() {
@@ -29,6 +52,28 @@ function updateTime() {
 setInterval(updateTime, 1000);
 updateTime();
 
+// ── Dark Mode ─────────────────────────────────────────────────────────────
+(function initDarkMode() {
+    const btn  = document.getElementById('darkModeBtn');
+    const icon = document.getElementById('darkModeIcon');
+    if (!btn) return;
+
+    const apply = (dark) => {
+        document.body.classList.toggle('dark', dark);
+        if (icon) {
+            icon.className = dark ? 'fas fa-sun' : 'fas fa-moon';
+        }
+        localStorage.setItem('railmonitor-dark', dark ? '1' : '0');
+    };
+
+    // Restore saved preference
+    apply(localStorage.getItem('railmonitor-dark') === '1');
+
+    btn.addEventListener('click', () => {
+        apply(!document.body.classList.contains('dark'));
+    });
+})();
+
 // ── Accel status pills ────────────────────────────────────────────────────
 function setAccelStatus(accelId, status) {
     ACCEL_STATES.forEach(state => {
@@ -39,12 +84,6 @@ function setAccelStatus(accelId, status) {
 }
 
 // ── Northern Central panel updater ───────────────────────────────────────
-// Called on every accelerometer-data socket event
-// Mapping (matches graphs.js exactly):
-//   AB-L-VERT = rmsV from left sensor
-//   AB-L-LAT  = rmsL from left sensor
-//   AB-R-VERT = rmsV from right sensor
-//   AB-R-LAT  = rmsL from right sensor
 function updateNorthernPanel() {
     const L = sensorCache.left;
     const R = sensorCache.right;
@@ -83,6 +122,67 @@ function updateRecentAlerts(impacts) {
     }).join('');
 }
 
+// ── Notification Bell ─────────────────────────────────────────────────────
+const _notifAlerts = [];
+let   _notifBellOpen = false;
+
+function _notifRender() {
+    const badge    = document.getElementById('notifBadge');
+    const listEl   = document.getElementById('notifList');
+    if (!badge || !listEl) return;
+
+    badge.textContent = _notifAlerts.length > 99 ? '99+' : _notifAlerts.length;
+    badge.style.display = _notifAlerts.length ? 'flex' : 'none';
+
+    listEl.innerHTML = _notifAlerts.length
+        ? _notifAlerts.slice(0, 8).map(a => `
+            <div class="notif-item">
+                <div class="notif-item-peak">${a.peak.toFixed(2)}g — ${a.sensor} (${a.pClass || '—'})</div>
+                <div class="notif-item-meta">${a.time}</div>
+            </div>`).join('')
+        : '<p class="notif-empty">No alerts yet</p>';
+}
+
+(function initNotifBell() {
+    const btn      = document.getElementById('notifBellBtn');
+    const dropdown = document.getElementById('notifDropdown');
+    const clearBtn = document.getElementById('notifClear');
+    if (!btn) return;
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _notifBellOpen = !_notifBellOpen;
+        dropdown.style.display = _notifBellOpen ? 'block' : 'none';
+    });
+
+    document.addEventListener('click', () => {
+        _notifBellOpen = false;
+        if (dropdown) dropdown.style.display = 'none';
+    });
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _notifAlerts.length = 0;
+            _notifRender();
+        });
+    }
+})();
+
+function _notifAddHighAlert(impact) {
+    if ((impact.severity || '').toUpperCase() !== 'HIGH') return;
+    _notifAlerts.unshift({
+        peak:   impact.peak_g || impact.gForce || 0,
+        sensor: impact.sensor || '—',
+        pClass: impact.p_class || null,
+        time:   new Date(impact.timestamp || Date.now()).toLocaleTimeString('en-IN', {
+            timeZone: 'Asia/Kolkata', hour12: false
+        })
+    });
+    if (_notifAlerts.length > 50) _notifAlerts.pop();
+    _notifRender();
+}
+
 function addImpactAlert(impact) {
     const container = document.querySelector('.alerts-mini-list');
     if (!container) return;
@@ -98,6 +198,7 @@ function addImpactAlert(impact) {
     container.insertBefore(el, container.firstChild);
     while (container.children.length > 5) container.removeChild(container.lastChild);
 
+    _notifAddHighAlert(impact);
     if (impact.severity === 'HIGH') showHighSeverityPopup(impact);
 }
 
@@ -106,7 +207,7 @@ function showHighSeverityPopup(impact) {
     popup.className = 'high-severity-popup';
     popup.innerHTML = `<strong>HIGH SEVERITY IMPACT</strong><br>
                        ${impact.peak_g.toFixed(2)}g detected<br>
-                       ${new Date(impact.timestamp).toLocaleTimeString()}`;
+                       ${new Date(impact.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })}`;
     document.body.appendChild(popup);
     setTimeout(() => popup.remove(), 5000);
 }
@@ -117,7 +218,6 @@ function updateGPSDisplay(location) {
     const speedEl = document.getElementById('speed');
 
     if (location.coordinate_km !== undefined && coordEl) {
-        // e.g. "1393 km 79 m"
         const km  = Math.floor(location.coordinate_km);
         const m   = Math.round((location.coordinate_km - km) * 1000);
         coordEl.textContent = km + ' km ' + m + ' m';
@@ -145,6 +245,7 @@ function connectToBackend() {
         console.log('[index.js] Socket connected');
         setAccelStatus(1, 'connected');
         setAccelStatus(2, 'connected');
+        updateHeaderStatus();
         loadInitialAlerts();
     });
 
@@ -152,23 +253,25 @@ function connectToBackend() {
         console.warn('[index.js] Socket disconnected:', reason);
         setAccelStatus(1, 'not-connected');
         setAccelStatus(2, 'not-connected');
+        updateHeaderStatus();
     });
 
     socket.on('connect_error', err => {
         console.error('[index.js] Socket error:', err.message);
         setAccelStatus(1, 'not-connected');
         setAccelStatus(2, 'not-connected');
+        updateHeaderStatus();
     });
 
-    // ── Main data event ───────────────────────────────────────────────────
+    // Periodic check for data timeout
+    setInterval(updateHeaderStatus, 2000);
+
     socket.on('accelerometer-data', data => {
-        /*
-          data = { sensor, x, y, z, rmsV, rmsL, peak, gForce, timestamp }
-          VERT = |Z|           (vertical peak from Z axis)
-          LAT  = sqrt(X²+Y²)  (lateral peak from horizontal plane)
-        */
         const side = data.sensor;
         if (side !== 'left' && side !== 'right') return;
+
+        lastSensorDataTime = Date.now();
+        updateHeaderStatus();
 
         const x    = data.x ?? 0;
         const y    = data.y ?? 0;
@@ -179,10 +282,7 @@ function connectToBackend() {
         sensorCache[side].vert = vert;
         sensorCache[side].lat  = lat;
 
-        // Estimate distance: increment by ~5m per packet (~500ms × ~36 km/h ≈ 5m)
-        // If GPS coordinate is available it will be overridden by updateGPSDisplay
         currentDistanceM += 5;
-
         updateNorthernPanel();
     });
 
@@ -198,27 +298,6 @@ async function loadInitialAlerts() {
         updateRecentAlerts(data);
     } catch (e) {
         console.warn('[index.js] Could not load initial alerts:', e.message);
-    }
-}
-
-// ── Data mode — live or historical ────────────────────────────────────────
-let dataMode   = { mode: 'live' };   // or { mode: 'historical', from, to }
-let mqttHandle = null;               // { pause, resume } returned by startMqttStatus
-
-function broadcastMode() {
-    const iframe = document.getElementById('content-frame');
-    if (iframe?.contentWindow) iframe.contentWindow.postMessage(dataMode, '*');
-}
-
-function setMqttPill(mode) {
-    const el   = document.getElementById('mqttStatus');
-    const text = document.getElementById('mqttText');
-    if (!el || !text) return;
-    if (mode === 'historical') {
-        el.className = 'mqtt-status historical';
-        text.textContent = 'Historical';
-    } else {
-        el.classList.remove('historical');
     }
 }
 
@@ -241,16 +320,11 @@ function loadPage(pageUrl) {
         if (!pageUrl.startsWith('pages/')) pageUrl = 'pages/' + pageUrl;
     }
 
-    // Append date range params when in historical mode
-    if (dataMode.mode === 'historical') {
-        pageUrl = pageUrl.split('?')[0] + `?from=${dataMode.from}&to=${dataMode.to}`;
-    }
-
     iframe.src = pageUrl;
     return false;
 }
 
-window.loadPage       = loadPage;
+window.loadPage      = loadPage;
 window.setAccelStatus = setAccelStatus;
 
 // ── Boot ──────────────────────────────────────────────────────────────────
@@ -261,68 +335,4 @@ window.addEventListener('load', () => {
 
     // Socket.IO is loaded from CDN in the HTML <head>; connect immediately
     connectToBackend();
-
-    // MQTT status pill in top bar
-    mqttHandle = startMqttStatus({
-        interval: 2000,
-        onChange({ online, time_since_last }) {
-            const el   = document.getElementById('mqttStatus');
-            const text = document.getElementById('mqttText');
-            if (!el || !text) return;
-            el.classList.remove('historical');
-            el.classList.toggle('offline', !online);
-            if (online) {
-                text.textContent = 'LIVE';
-            } else {
-                const s   = time_since_last;
-                const ago = s == null  ? 'Offline'
-                          : s < 60    ? `${s}s ago`
-                          : `${Math.floor(s / 60)}m ago`;
-                text.textContent = ago;
-            }
-        }
-    });
-
-    // History dropdown toggle
-    document.getElementById('historyBtn')?.addEventListener('click', () => {
-        document.getElementById('historyDropdown')?.classList.toggle('open');
-    });
-
-    // Close dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-        if (!document.getElementById('historyControl')?.contains(e.target)) {
-            document.getElementById('historyDropdown')?.classList.remove('open');
-        }
-    });
-
-    // Apply historical range
-    document.getElementById('applyRange')?.addEventListener('click', () => {
-        const from = document.getElementById('rangeFrom').value;
-        const to   = document.getElementById('rangeTo').value;
-        if (!from || !to) return;
-        dataMode = { mode: 'historical', from, to };
-        // Update button label and pill
-        document.getElementById('historyBtnLabel').textContent = `${from} – ${to}`;
-        document.getElementById('historyBtn').classList.add('active');
-        document.getElementById('historyDropdown').classList.remove('open');
-        setMqttPill('historical');
-        mqttHandle?.pause();
-        // Reload current iframe with range params
-        const iframe = document.getElementById('content-frame');
-        if (iframe?.src) {
-            iframe.src = iframe.src.split('?')[0] + `?from=${from}&to=${to}`;
-        }
-    });
-
-    // Return to live
-    document.getElementById('goLive')?.addEventListener('click', () => {
-        dataMode = { mode: 'live' };
-        document.getElementById('historyBtnLabel').textContent = 'History';
-        document.getElementById('historyBtn').classList.remove('active');
-        document.getElementById('historyDropdown').classList.remove('open');
-        mqttHandle?.resume();
-        // Reload current iframe without params
-        const iframe = document.getElementById('content-frame');
-        if (iframe?.src) iframe.src = iframe.src.split('?')[0];
-    });
 });

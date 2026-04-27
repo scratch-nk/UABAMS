@@ -15,16 +15,6 @@
         <div class="logo"><h1>RailDashboard</h1></div>
         <nav class="main-nav">
             <div class="menu-item dropdown">
-                <button class="menu-btn">File <i class="fas fa-chevron-down"></i></button>
-                <div class="dropdown-content">
-                    <a href="#"><i class="fas fa-file"></i> New Session</a>
-                    <a href="#"><i class="fas fa-folder-open"></i> Open</a>
-                    <a href="#"><i class="fas fa-save"></i> Save</a>
-                    <a href="#"><i class="fas fa-print"></i> Print</a>
-                    <a href="#"><i class="fas fa-sign-out-alt"></i> Exit</a>
-                </div>
-            </div>
-            <div class="menu-item dropdown">
                 <button class="menu-btn">Dashboard <i class="fas fa-chevron-down"></i></button>
                 <div class="dropdown-content">
                     <a href="#" onclick="loadPage('pages/management-dashboard.html')"><i class="fas fa-chart-pie"></i> Management Dashboard</a>
@@ -75,6 +65,26 @@
                         <button class="history-apply" id="applyRange">Apply</button>
                         <button class="history-live"  id="goLive">Go Live</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Dark Mode Toggle -->
+            <button class="dark-mode-btn" id="darkModeBtn" title="Toggle dark mode">
+                <i class="fas fa-moon" id="darkModeIcon"></i>
+            </button>
+
+            <!-- Notification Bell -->
+            <div class="notif-bell-wrap" id="notifWrap">
+                <button class="notif-bell-btn" id="notifBellBtn" title="High severity alerts">
+                    <i class="fas fa-bell"></i>
+                    <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+                </button>
+                <div class="notif-dropdown" id="notifDropdown" style="display:none;">
+                    <div class="notif-header">
+                        <span>Recent HIGH Alerts</span>
+                        <button class="notif-clear" id="notifClear">Clear</button>
+                    </div>
+                    <div id="notifList"><p class="notif-empty">No alerts yet</p></div>
                 </div>
             </div>
 

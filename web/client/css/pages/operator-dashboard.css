@@ -75,27 +75,108 @@ body {
 /* Main content */
 .main-content { max-width: 1800px; margin: 0 auto; padding: 1.5rem; }
 
-/* Banner */
-.banner {
-    background: linear-gradient(to right, #dbeafe, #e0f2fe);
-    border: 1px solid #bae6fd;
+/* Session Status Bar */
+.session-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
     border-radius: 0.75rem;
-    padding: 2rem;
+    padding: 0.75rem 1.25rem;
     margin-bottom: 1.5rem;
-    text-align: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
 }
 
-.banner-icon {
-    background-color: #ffffff;
-    padding: 0.75rem;
-    border-radius: 0.75rem;
-    display: inline-flex;
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.25rem 0.75rem;
+    flex: 1;
+    min-width: 140px;
+}
+
+.status-icon {
+    width: 18px;
+    height: 18px;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.status-item-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.status-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.status-value {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #0f172a;
+    font-family: 'Courier New', monospace;
+}
+
+.status-divider {
+    width: 1px;
+    height: 32px;
+    background: #e2e8f0;
+    flex-shrink: 0;
+}
+
+.status-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.status-badge[data-state="live"]    { background: #dcfce7; color: #16a34a; }
+.status-badge[data-state="nofix"]   { background: #f1f5f9; color: #64748b; }
+.status-badge[data-state="online"]  { background: #dcfce7; color: #16a34a; }
+.status-badge[data-state="offline"] { background: #fee2e2; color: #dc2626; }
+
+/* Threshold Quick-View Strip */
+.threshold-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
     margin-bottom: 1rem;
-    border: 1px solid #e0f2fe;
+    flex-wrap: wrap;
 }
 
-.banner h2 { font-size: 1.5rem; font-weight: 600; color: #0f172a; margin-bottom: 0.5rem; }
-.banner p  { font-size: 0.875rem; color: #475569; }
+.threshold-strip-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    margin-right: 0.25rem;
+}
+
+.threshold-chip {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+}
+
+.chip-p1 { background: #fef3c7; color: #92400e; }
+.chip-p2 { background: #fee2e2; color: #b91c1c; }
+.chip-p3 { background: #4c0519; color: #fecdd3; }
 
 /* Metrics grid */
 .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
@@ -133,6 +214,8 @@ body {
 .action-btn.primary:hover     { background-color: #1d4ed8; }
 .action-btn.secondary         { background-color: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; }
 .action-btn.secondary:hover   { background-color: #f8fafc; border-color: #cbd5e1; }
+.action-btn.reset-btn         { background-color: #fef2f2; border: 1px solid #fecaca; color: #dc2626; }
+.action-btn.reset-btn:hover   { background-color: #fee2e2; border-color: #f87171; }
 
 /* Quick Stats */
 .quick-stats {
@@ -230,6 +313,17 @@ body {
 .accel-badge.cyan   { background-color: #cffafe; border-color: #06b6d4; color: #0e7490; }
 .accel-badge.purple { background-color: #ede9fe; border-color: #a78bfa; color: #6d28d9; }
 
+.sensor-freshness-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    transition: background 0.3s, color 0.3s;
+}
+.sensor-freshness-badge[data-state="live"]  { background: #dcfce7; color: #16a34a; }
+.sensor-freshness-badge[data-state="stale"] { background: #fef9c3; color: #92400e; }
+
 .values-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
 
 .accel-section-label {
@@ -293,6 +387,207 @@ body {
     font-size: 0.625rem;
     font-weight: 600;
     text-transform: uppercase;
+}
+
+/* ── Reset Modal (moved from JS) ───────────────────────────────────────── */
+#resetModal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.55);
+    align-items: center;
+    justify-content: center;
+}
+
+#resetModal .modal-content {
+    background: #fff;
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 440px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    font-family: inherit;
+}
+
+#resetModal .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+#resetModal .modal-header svg {
+    width: 28px;
+    height: 28px;
+    color: #dc2626;
+    flex-shrink: 0;
+}
+
+#resetModal .modal-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: #1e293b;
+}
+
+#resetModal .modal-body p {
+    color: #475569;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+#resetModal .radio-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-bottom: 0.75rem;
+    transition: border-color 0.2s;
+}
+
+#resetModal .radio-option.selected {
+    border-color: #22c55e;
+}
+
+#resetModal .radio-option.wipe.selected {
+    border-color: #dc2626;
+}
+
+#resetModal .radio-option input {
+    margin-top: 3px;
+    accent-color: #22c55e;
+}
+
+#resetModal .radio-option.wipe input {
+    accent-color: #dc2626;
+}
+
+#resetModal .radio-option .option-title {
+    font-weight: 600;
+    color: #1e293b;
+}
+
+#resetModal .radio-option .option-desc {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+#resetModal .modal-footer {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+}
+
+#resetModal .btn-cancel {
+    padding: 0.6rem 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #64748b;
+}
+
+#resetModal .btn-confirm {
+    padding: 0.6rem 1.25rem;
+    border: none;
+    border-radius: 8px;
+    background: #dc2626;
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+#resetModal .btn-confirm.save {
+    background: #22c55e;
+}
+
+/* ── Toast Notifications ───────────────────────────────────────────────── */
+.toast-notification {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    z-index: 99999;
+    color: #fff;
+    padding: 0.75rem 1.25rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    animation: fadeInUp 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.toast-notification.success {
+    background: #22c55e;
+}
+
+.toast-notification.warning {
+    background: #f59e0b;
+    left: 1.5rem;
+    right: auto;
+}
+
+.toast-notification svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* ── High-G Alert Banner ───────────────────────────────────────────────── */
+#highGAlert {
+    display: none;
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    background: #dc2626;
+    color: #fff;
+    padding: 0.85rem 1.5rem;
+    align-items: center;
+    gap: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+#highGAlert svg {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+}
+
+#highGAlert .alert-content {
+    flex: 1;
+}
+
+#highGAlert .alert-content strong {
+    font-size: 1.1rem;
+}
+
+#highGAlert .alert-content span {
+    margin-left: 0.75rem;
+    font-size: 0.95rem;
+}
+
+#highGAlert .dismiss-btn {
+    background: rgba(255, 255, 255, 0.25);
+    border: none;
+    color: #fff;
+    padding: 0.3rem 0.75rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+/* ── Animation ─────────────────────────────────────────────────────────── */
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .log-type.error   { background-color: #fee2e2; color: #b91c1c; }

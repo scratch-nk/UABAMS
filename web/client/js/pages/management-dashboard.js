@@ -2,24 +2,8 @@
 
 const API = window.location.origin;
 
-// ── Historical mode detection ─────────────────────────────────────────────
-const _mp        = new URLSearchParams(location.search);
-const _histFrom  = _mp.get('from');
-const _histTo    = _mp.get('to');
-const IS_HISTORICAL = !!(_histFrom && _histTo);
-
-// Respond to mode changes from shell
-window.addEventListener('message', (e) => {
-    if (!e.data) return;
-    if (e.data.mode === 'historical' || e.data.mode === 'live') {
-        location.href = e.data.mode === 'historical'
-            ? `${location.pathname}?from=${e.data.from}&to=${e.data.to}`
-            : location.pathname;
-    }
-});
-
-// Clock — uses startClock from common.js (skip in historical mode)
-if (!IS_HISTORICAL) startClock('currentTime', 'currentDate', 'long');
+// Clock — uses startClock from common.js
+startClock('currentTime', 'currentDate', 'long');
 
 // ── Chart config ───────────────────────────────────────────────────────────
 const CHART_POINTS = 120; // how many seconds to show
@@ -137,8 +121,7 @@ function timeAgo(isoStr) {
 
 async function fetchUptime() {
     try {
-        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
-        const data = await fetch(`${API}/api/management/uptime${qs}`).then(r => r.json());
+        const data = await fetch(`${API}/api/management/uptime`).then(r => r.json());
         document.getElementById('kpi-uptime').textContent = data.uptime_pct + '%';
         if (data.window_hours === 0) {
             document.getElementById('kpi-uptime-sub').textContent = 'No data yet';
@@ -154,8 +137,7 @@ async function fetchUptime() {
 
 async function fetchActiveSensors() {
     try {
-        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
-        const data = await fetch(`${API}/api/management/active-sensors${qs}`).then(r => r.json());
+        const data = await fetch(`${API}/api/management/active-sensors`).then(r => r.json());
         document.getElementById('kpi-sensors').textContent = data.count;
         if (data.online.length > 0) {
             const offline = data.last_known.length ? ` · ${data.last_known.join(',')} offline` : '';
@@ -173,8 +155,7 @@ async function fetchActiveSensors() {
 
 async function fetchActiveAlerts() {
     try {
-        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
-        const data = await fetch(`${API}/api/management/active-alerts${qs}`).then(r => r.json());
+        const data = await fetch(`${API}/api/management/active-alerts`).then(r => r.json());
         document.getElementById('kpi-alerts').textContent     = data.total;
         document.getElementById('kpi-alerts-sub').textContent = `${data.require_attention} require attention`;
     } catch (e) { console.error('active-alerts fetch error:', e); }
@@ -182,8 +163,7 @@ async function fetchActiveAlerts() {
 
 async function fetchSystemHealth() {
     try {
-        const qs   = IS_HISTORICAL ? `?from=${_histFrom}&to=${_histTo}` : '';
-        const data = await fetch(`${API}/api/management/system-health${qs}`).then(r => r.json());
+        const data = await fetch(`${API}/api/management/system-health`).then(r => r.json());
         healthChart.data.datasets[0].data = [data.operational, data.warning, data.critical];
         healthChart.update();
         document.getElementById('health-operational').textContent = data.operational;
@@ -201,10 +181,7 @@ const STALE_CUTOFF_MS  = 15 * 1000;      // sensor considered offline after 15s
 
 async function fetchChartFromDB() {
     try {
-        const url = IS_HISTORICAL
-            ? `${API}/api/management/sensor-chart?from=${_histFrom}&to=${_histTo}`
-            : `${API}/api/management/sensor-chart-recent`;
-        const data = await fetch(url).then(r => r.json());
+        const data = await fetch(`${API}/api/management/sensor-chart-recent`).then(r => r.json());
 
         const now       = Date.now();
         const windowCut = new Date(now - CHART_WINDOW_MS).toISOString().slice(0, 19);
@@ -225,7 +202,7 @@ async function fetchChartFromDB() {
             const slice = windowed.slice(-CHART_POINTS);
             const start = CHART_POINTS - slice.length;
             slice.forEach((pt, i) => {
-                newLabels[start + i] = pt.ts ? new Date(pt.ts).toLocaleTimeString() : '';
+                newLabels[start + i] = pt.ts ? new Date(pt.ts).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }) : '';
                 // If stale, only fill up to the last real point — leave rest null
                 if (!isStale) {
                     newLeft[start + i]  = pt.left;
@@ -249,24 +226,60 @@ async function fetchChartFromDB() {
     } catch (e) { console.error('chart DB fetch error:', e); }
 }
 
+// ── GPS ────────────────────────────────────────────────────────────────────
+async function fetchGPS() {
+    try {
+        const d = await fetch(`${API}/api/latest/gps`).then(r => r.json());
+        if (!d) return;
+
+        const lat = d.lat >= 0 ? `${d.lat.toFixed(6)}° N` : `${Math.abs(d.lat).toFixed(6)}° S`;
+        const lng = d.lng >= 0 ? `${d.lng.toFixed(6)}° E` : `${Math.abs(d.lng).toFixed(6)}° W`;
+        const ts  = new Date(d.timestamp.endsWith('Z') ? d.timestamp : d.timestamp + 'Z');
+        const ageMs = Date.now() - ts.getTime();
+        const isLive = ageMs < 10000;
+
+        document.getElementById('gps-lat').textContent      = lat;
+        document.getElementById('gps-lng').textContent      = lng;
+        document.getElementById('gps-speed').textContent    = `${d.speedKmh} km/h`;
+        document.getElementById('gps-distance').textContent = `${(d.totalDistanceM / 1000).toFixed(2)} km`;
+        document.getElementById('gps-lastfix').textContent  = ts.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
+
+        const statusEl = document.getElementById('gps-status');
+        const statusItem = document.getElementById('gps-status-item');
+        statusEl.textContent = isLive ? 'Active' : 'Stale';
+        statusEl.style.color = isLive ? '#22c55e' : '#ef4444';
+        statusItem.style.borderLeft = `3px solid ${isLive ? '#22c55e' : '#ef4444'}`;
+    } catch (e) { console.error('gps fetch error:', e); }
+}
+
 // ── Initial load ──────────────────────────────────────────────────────────
 fetchChartFromDB();
 fetchUptime();
 fetchActiveSensors();
 fetchActiveAlerts();
 fetchSystemHealth();
+fetchGPS();
 
-// ── Live polling (skipped in historical mode) ─────────────────────────────
-if (!IS_HISTORICAL) {
-    setInterval(() => {
+function getChartPollMs() {
+    if (typeof AccelConfig === 'undefined') return 3000;
+    const avg = (AccelConfig.getOdr(1) + AccelConfig.getOdr(2)) / 2;
+    if (avg >= 150) return 3000;
+    if (avg >= 75)  return 6000;
+    return 12000;
+}
+let _mgmtPollTimer = null;
+function restartMgmtPoll() {
+    if (_mgmtPollTimer) clearInterval(_mgmtPollTimer);
+    _mgmtPollTimer = setInterval(() => { 
         fetchChartFromDB();
         fetchActiveSensors();
         fetchSystemHealth();
-    }, 3000);
-
-    // Uptime and alerts are slower-moving — poll every 15s
-    setInterval(() => {
-        fetchUptime();
-        fetchActiveAlerts();
-    }, 15000);
+        fetchGPS();
+    }, getChartPollMs());
 }
+if (typeof AccelConfig !== 'undefined') AccelConfig.onChange(restartMgmtPoll);
+restartMgmtPoll();
+setInterval(() => { 
+    fetchUptime();
+    fetchActiveAlerts(); 
+    }, 15000);

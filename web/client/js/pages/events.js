@@ -1,55 +1,160 @@
-/* events.js — Realtime Impact Events polled from DB every 2s */
+/* events.js — Realtime Impact Events
+ *
+ * Threshold classification:
+ *   - Fetched fresh from /api/thresholds every poll cycle
+ *   - d.p_class from DB is IGNORED — re-classified at render time against
+ *     live thresholds so config changes reflect immediately
+ *   - Gap-absorbing logic: g >= p3Min → P3, g >= p2Min → P2, g >= p1Min → P1
+ *
+ * Live/Offline indicator:
+ *   - Checks /api/realtime/status on every cycle
+ *   - "Live" (green) only when MQTT is connected AND data received < 10s ago
+ *   - "Offline" (red) when hardware disconnected or no recent data
+ */
 
 const API = window.location.origin;
 
-// Read date-range params (set by index.js when in historical mode)
-const _p        = new URLSearchParams(location.search);
-const _histFrom = _p.get('from');
-const _histTo   = _p.get('to');
+let allEvents  = [];
+let filterVal  = 'all';
+let lastIsoTime = '';
 
-let allImpacts = [];
+// Null until fetched — no hardcoded defaults
+let thresholds = { p1Min: null, p1Max: null, p2Min: null, p2Max: null, p3Min: null };
 
-async function loadImpacts() {
+// ── Fetch live thresholds ─────────────────────────────────────────────────
+async function loadThresholds() {
     try {
-        const url = new URL(`${API}/api/impacts`);
-        if (_histFrom) url.searchParams.set('from', _histFrom);
-        if (_histTo)   url.searchParams.set('to',   _histTo);
-        const res  = await fetch(url);
-        allImpacts = await res.json();
+        const res = await fetch(`${API}/api/thresholds`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        thresholds = await res.json();
     } catch (e) {
-        console.error('[events] Failed to load impacts:', e.message);
-        allImpacts = [];
+        console.warn('[events] Could not load thresholds:', e.message);
     }
-    displayEvents();
 }
 
-function displayEvents() {
-    const filter   = document.getElementById('severityFilter').value;
-    const filtered = filter === 'all'
-        ? allImpacts
-        : allImpacts.filter(e => (e.severity || '').toLowerCase() === filter);
+// ── Gap-absorbing P-class from live thresholds ────────────────────────────
+// Never reads d.p_class — always re-classifies from raw peak_g value.
+function getPClass(peakG) {
+    if (peakG == null || thresholds.p1Min === null) return null;
+    const g = +peakG;
+    if (g >= thresholds.p3Min) return 'P3';
+    if (g >= thresholds.p2Min) return 'P2';
+    if (g >= thresholds.p1Min) return 'P1';
+    return null;
+}
 
-    document.getElementById('totalEvents').textContent  = filtered.length;
-    document.getElementById('highEvents').textContent   = filtered.filter(e => (e.severity || '').toUpperCase() === 'HIGH').length;
-    document.getElementById('mediumEvents').textContent = filtered.filter(e => (e.severity || '').toUpperCase() === 'MEDIUM').length;
-    document.getElementById('lowEvents').textContent    = filtered.filter(e => (e.severity || '').toUpperCase() === 'LOW').length;
+// ── Normalise DB record ───────────────────────────────────────────────────
+function normalise(d) {
+    const sev = (d.severity || '').toLowerCase();
+    return {
+        time: d.timestamp ? new Date(d.timestamp).toLocaleString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+        }) : '—',
+        isoTime:  d.timestamp || '',
+        location: d.distance_m > 0
+            ? `KM ${Math.floor(d.distance_m / 1000)}+${String(d.distance_m % 1000).padStart(3,'0')}`
+            : 'Stationary',
+        peak:     +(d.peak_g || d.gForce || 0).toFixed(2),
+        sensor:   d.sensor || '—',
+        severity: sev,
+        pClass:     getPClass(d.peak_g),   // live classification, not d.p_class
+        // Applied threshold: the min of whichever band the peak falls into
+        appliedThreshold: (() => {
+            if (thresholds.p1Min === null) return null;
+            const g = +(d.peak_g || 0);
+            if (g >= thresholds.p3Min) return thresholds.p3Min;
+            if (g >= thresholds.p2Min) return thresholds.p2Min;
+            if (g >= thresholds.p1Min) return thresholds.p1Min;
+            return null;
+        })(),
+        isNew:    false
+    };
+}
 
-    document.getElementById('eventsList').innerHTML = filtered.map(event => {
-        const sev      = (event.severity || 'low').toLowerCase();
-        const peak     = event.peak_g != null ? (+event.peak_g).toFixed(1) + ' g' : '—';
-        const time     = event.timestamp ? new Date(event.timestamp).toLocaleString() : (event.time || '—');
-        const location = event.distance_m != null
-            ? 'KM ' + (event.distance_m / 1000).toFixed(3)
-            : (event.location || '—');
-        return `
-        <div class="event-card event-${sev}">
-            <div class="event-info">
-                <span class="event-time">${time}</span>
-                <span class="event-location">${location}</span>
+// ── Device connection status ──────────────────────────────────────────────
+async function updateConnectionStatus() {
+    const statusEl = document.getElementById('connStatus');
+    if (!statusEl) return;
+    try {
+        const res    = await fetch(`${API}/api/realtime/status`);
+        const status = await res.json();
+        // "Live" only when MQTT connected AND hardware sent data in last 10s
+        const live = status.connected && status.receiving_data;
+        statusEl.textContent  = live ? 'Live' : 'Offline';
+        statusEl.className    = `conn-status ${live ? 'conn-on' : 'conn-off'}`;
+    } catch (e) {
+        // Server itself unreachable
+        statusEl.textContent = 'Offline';
+        statusEl.className   = 'conn-status conn-off';
+    }
+}
+
+// ── Fetch and render events ───────────────────────────────────────────────
+async function fetchEvents() {
+    // Always refresh thresholds first so classification uses latest config
+    await loadThresholds();
+
+    // Connection status is independent of data fetch — check separately
+    await updateConnectionStatus();
+
+    try {
+        const data       = await fetch(`${API}/api/impacts`).then(r => r.json());
+        const normalised = data.map(normalise);
+
+        // Mark genuinely new arrivals
+        if (lastIsoTime) {
+            normalised.forEach(e => { if (e.isoTime > lastIsoTime) e.isNew = true; });
+        }
+        if (normalised.length) {
+            const latest = normalised.reduce((a, b) => a.isoTime > b.isoTime ? a : b);
+            if (latest.isoTime > lastIsoTime) lastIsoTime = latest.isoTime;
+        }
+
+        allEvents = normalised;
+        renderAll(normalised.some(e => e.isNew));
+    } catch (e) {
+        console.error('[events] fetch impacts:', e);
+    }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function filtered() {
+    return filterVal === 'all' ? allEvents : allEvents.filter(e => e.severity === filterVal);
+}
+
+function pClassBadge(p) {
+    if (!p) return '';
+    const map = { P1: '#22c55e', P2: '#f59e0b', P3: '#ef4444' };
+    return `<span class="pclass-badge" style="background:${map[p] || '#94a3b8'}">${p}</span>`;
+}
+
+function cardHTML(ev) {
+    const newTag = ev.isNew ? '<span class="new-tag">NEW</span>' : '';
+    return `
+    <div class="event-card event-${ev.severity}${ev.isNew ? ' event-flash' : ''}">
+        <div class="event-left">
+            <div class="event-top-row">
+                ${newTag}
+                <span class="event-time">${ev.time}</span>
+                <span class="event-sensor">${ev.sensor}</span>
+                ${pClassBadge(ev.pClass)}
             </div>
-            <span class="event-peak peak-${sev}">${peak}</span>
-        </div>`;
-    }).join('');
+            <div class="event-bottom-row">
+                <span class="event-location"><i class="fas fa-map-marker-alt"></i> ${ev.location}</span>
+                <span class="event-meta">Peak <strong>${ev.peak.toFixed(3)} g</strong></span>
+                ${ev.appliedThreshold != null
+                    ? `<span class="event-meta">Threshold <strong>${ev.appliedThreshold} g</strong></span>`
+                    : '<span class="event-meta" style="color:#94a3b8;">Threshold —</span>'}
+            </div>
+        </div>
+        <div class="event-right">
+            <span class="event-peak peak-${ev.severity}">${ev.peak.toFixed(1)} g</span>
+            <span class="sev-label sev-${ev.severity}">${ev.severity.toUpperCase()}</span>
+        </div>
+    </div>`;
 }
 
 function renderAll(flashDot = false) {
@@ -63,8 +168,7 @@ function renderAll(flashDot = false) {
 
     if (flashDot) {
         const dot = document.getElementById('liveDot');
-        dot.classList.add('pulse');
-        setTimeout(() => dot.classList.remove('pulse'), 800);
+        if (dot) { dot.classList.add('pulse'); setTimeout(() => dot.classList.remove('pulse'), 800); }
     }
 }
 
@@ -75,25 +179,13 @@ document.getElementById('severityFilter').addEventListener('change', e => {
 });
 
 // ── Export ────────────────────────────────────────────────────────────────
-function exportEvents() {
-    const params = new URLSearchParams();
-    if (_histFrom) params.set('from', _histFrom);
-    if (_histTo)   params.set('to',   _histTo);
-    window.location.href = `${API}/api/impacts/export/csv?${params}`;
-}
-
-document.getElementById('severityFilter').addEventListener('change', displayEvents);
-
-// Respond to mode changes from the shell (index.js postMessage)
-window.addEventListener('message', (e) => {
-    if (!e.data || e.data.type !== undefined) return; // ignore non-mode messages
-    if (e.data.mode === 'historical' || e.data.mode === 'live') {
-        location.href = e.data.mode === 'historical'
-            ? `${location.pathname}?from=${e.data.from}&to=${e.data.to}`
-            : location.pathname;
-    }
-});
-
+function exportEvents() { window.open(`${API}/api/impacts/export/csv`, '_blank'); }
 window.exportEvents = exportEvents;
 
-loadImpacts();
+// ── Boot — show Offline immediately, then start polling ───────────────────
+(function init() {
+    const statusEl = document.getElementById('connStatus');
+    if (statusEl) { statusEl.textContent = 'Offline'; statusEl.className = 'conn-status conn-off'; }
+    fetchEvents();
+    setInterval(fetchEvents, 2000);
+})();

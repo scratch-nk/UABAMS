@@ -22,6 +22,7 @@ node_modules/
 # Secrets — catch-all, never let these through
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 secrets.*
