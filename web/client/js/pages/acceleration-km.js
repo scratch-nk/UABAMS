@@ -541,7 +541,7 @@ function generateFullDayCSV(docsForDay, reportDate) {
     const rows = [];
 
     // Report Header
-    rows.push("RailMonitor - Full Day KM Wise Acceleration Report");
+    rows.push("Datalogger - Full Day KM Wise Acceleration Report");
     rows.push(`Date,${reportDate}`);
     rows.push(`Total Records,${docsForDay.length}`);
     rows.push(`Generated On,${new Date().toLocaleString()}`);

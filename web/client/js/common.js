@@ -1,5 +1,5 @@
 /* ============================================================
-   common.js — Shared utilities for all RailMonitor html_pages
+   common.js — Shared utilities for all datalogger  html_pages
    ============================================================ */
 
 // localStorage key constants

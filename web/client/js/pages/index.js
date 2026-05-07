@@ -1,5 +1,5 @@
 /* =============================================================================
-   index.js — RailMonitor shell: left panel, accel status, clock, iframe loader
+   index.js — Datalogger shell: left panel, accel status, clock, iframe loader
    All sensor values driven by real Socket.IO data from hardware
 ============================================================================= */
 
