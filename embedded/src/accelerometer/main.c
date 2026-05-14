@@ -1,5 +1,5 @@
 /*
-  * accelerometer/main.c -- UABAMS Box 1, FreeRTOS v10.6.2 
+ * accelerometer/main.c -- UABAMS Box 1, FreeRTOS v10.6.2 
  *
  * Three-task architecture:
  *
@@ -46,35 +46,43 @@
 #include "clock_config.h"
 #include "delay.h"
 #include "health.h"
-#include "sdio.h"
 #include "boot_info.h"
 #include "accelerometer_health.h"
 #include "ethernet_health.h"
+#include <sdio.h>
 
-#include <stdio.h>
 #include <math.h>
 #include <string.h>
 
-/* -- Firmware identity ----------------------------------------------------- */
+#include "ff.h"
+#include "diskio.h"
+#include <stdio.h>
+
+
+FATFS fs;
+FIL fil;
+// -- Firmware identity 
 #define SW_VERSION   "v1.0.0"
 #define BOX_ID       "BOX 1"
 #define FREERTOS_VER "v10.6.2"
 
-/* -- Sampling config -------------------------------------------------------- */
+// -- Sampling config 
 #define FS_HZ        200
 #define WINDOW_MS    500
 #define SAMPLE_COUNT (FS_HZ * WINDOW_MS / 1000)   /* 100 samples */
 #define EVENT_TH     2.0f                          /* g -- vibration alert */
 #define HEALTH_CHECK_MS  (1000*30)   /* HealthTask re-check interval. 30 seconds */
 
-/* -- Network config --------------------------------------------------------- */
+
+//uint16_t g_sd_rca = 0;
+// -- Network config 
 uint8_t mac[]       = {0x00, 0x08, 0xDC, 0x11, 0x22, 0x10};
 uint8_t ip[]        = {192, 168, 1, 10};
 static uint8_t sn[]        = {255, 255, 255, 0};
 static uint8_t gw[]        = {0, 0, 0, 0};
 static uint8_t server_ip[] = {192, 168, 1, 100};
 
-/* -- WindowStats_t -- data passed from AccelTask to LogTask ---------------- */
+// -- WindowStats_t -- data passed from AccelTask to LogTask 
 typedef struct {
     uint8_t s1_valid;   /* 1 = sensor 1 data is good; 0 = skip (no output) */
     uint8_t s2_valid;   /* 1 = sensor 2 data is good; 0 = skip (no output) */
@@ -90,16 +98,15 @@ typedef struct {
     float s2_last_x, s2_last_y, s2_last_z;
 } WindowStats_t;
 
-/* -- Shared ETH state (LogTask sets, HealthTask clears on link loss) ------- */
+// -- Shared ETH state (LogTask sets, HealthTask clears on link loss) 
 volatile uint8_t g_eth_ok = 0;
 
-/* -- RTOS handles ---------------------------------------------------------- */
-static QueueHandle_t     xAccelQueue;   /* WindowStats_t, depth 4            */
-static SemaphoreHandle_t xSPI2Mutex;    /* guards W5500 SPI2 bus             */
-static SemaphoreHandle_t xSPI1Mutex;    /* guards ADXL345 SPI1, shared with
-                                           HealthTask for periodic ID reads  */
+// RTOS handles 
+static QueueHandle_t     xAccelQueue;   // WindowStats_t, depth 4            
+static SemaphoreHandle_t xSPI2Mutex;    // guards W5500 SPI2 bus             
+static SemaphoreHandle_t xSPI1Mutex;    // guards ADXL345 SPI1, shared with HealthTask for periodic ID reads  */
 
-/* -- Helpers --------------------------------------------------------------- */
+// -- Helpers 
 static const char *vib_level(float peak)
 {
     if (peak >= 16.0f) return "16G";
@@ -114,7 +121,7 @@ static void UBMS_Send_TCP(char *data)
     W5500_Send(0, (uint8_t *)data, strlen(data));
 }
 
-/* -- TCP Connection Management Function (from main.c1) --------------------- */
+// -- TCP Connection Management Function (from main.c1) 
 void TCP_Task(void)
 {
     uint8_t status = W5500_GetSocketStatus(0);
@@ -128,7 +135,7 @@ void TCP_Task(void)
         g_eth_ok = 0;
         health_set_tcp(HEALTH_FAIL);
         // reconnect try
-        W5500_TCP_Client_Connect(0, server_ip, 5000);
+        W5500_TCP_Client_Connect(0, server_ip, 5000); 
     }
 }
 
@@ -152,7 +159,7 @@ void SysTick_Handler(void)
     }
 }
 
-/* -- AccelTask ------------------------------------------------------------- */
+// -- AccelTask 
 static void vAccelTask(void *pvParam)
 {
     (void)pvParam;
@@ -163,7 +170,7 @@ static void vAccelTask(void *pvParam)
         return;
     }
 
-    /* Stack-allocated sample buffers: 4 x 100 x 4 B = 1600 B on task stack */
+    // Stack-allocated sample buffers: 4 x 100 x 4 B = 1600 B on task stack 
     float s1_x[SAMPLE_COUNT], s1_z[SAMPLE_COUNT];
     float s2_x[SAMPLE_COUNT], s2_z[SAMPLE_COUNT];
 
@@ -178,7 +185,7 @@ static void vAccelTask(void *pvParam)
         float sum_x1 = 0, sum_z1 = 0, sumsq_x1 = 0, sumsq_z1 = 0;
         float sum_x2 = 0, sum_z2 = 0, sumsq_x2 = 0, sumsq_z2 = 0;
 
-        /* -- 100 samples at 200 Hz (5 ms per sample) -- */
+        // -- 100 samples at 200 Hz (5 ms per sample) 
         for (int i = 0; i < SAMPLE_COUNT; i++) {
             float x1 = 0.0f, y1 = 0.0f, z1 = 0.0f;
             float x2 = 0.0f, y2 = 0.0f, z2 = 0.0f;
@@ -206,7 +213,7 @@ static void vAccelTask(void *pvParam)
                 stats.s2_last_x = x2;  stats.s2_last_y = y2;  stats.s2_last_z = z2;
             }
 
-            /* yield until next 5 ms slot -- CPU free while waiting */
+            // yield until next 5 ms slot -- CPU free while waiting 
             vTaskDelayUntil(&xLastSampleTime, pdMS_TO_TICKS(1000 / FS_HZ));
         }
 
@@ -237,9 +244,24 @@ static void vAccelTask(void *pvParam)
     }
 }
 
-/* -- LogTask --------------------------------------------------------------- */
+
+// -- LogTask 
 static void vLogTask(void *pvParam)
 {
+
+        int status_s1 = 0;
+        int status_s2 = 0;
+        FIL fil;
+        UINT bw;
+        
+
+        if (f_open(&fil, "data.txt", FA_OPEN_ALWAYS | FA_WRITE) == FR_OK) {
+            f_lseek(&fil, f_size(&fil));
+        } else {
+            usart_debug("FILE OPEN FAIL\r\n");
+        }
+        
+
     (void)pvParam;
     usart_debug("[LogTask] started\r\n");
 
@@ -283,22 +305,86 @@ static void vLogTask(void *pvParam)
         xSemaphoreGive(xSPI2Mutex);
     }
 
-    /* -- Data loop --------------------------------------------------------- */
+    // -- Data loop 
     WindowStats_t stats;
     char tcp_buf[512];
 
     for (;;) {
+
+         int status_s1 = 0;
+         uint32_t time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+        if (stats.s1_last_x > 16 || stats.s1_last_x < -16)
+            status_s1 = 1;
+
+        if (isnan(stats.s1_last_x) || isinf(stats.s1_last_x))
+            status_s1 = 2;
+
+        if (stats.s1_last_x == 0 && stats.s1_last_y == 0 && stats.s1_last_z == 0)
+            status_s1 = 3;
         /* block until AccelTask pushes a completed window */
         xQueueReceive(xAccelQueue, &stats, portMAX_DELAY);
 
+    char line[256];
+            snprintf(line, sizeof(line),
+                "S1,%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d\r\n",
+                time_ms,
+                stats.s1_last_x,
+                stats.s1_last_y,
+                stats.s1_last_z,
+                stats.s1_rms_v,
+                stats.s1_rms_l,
+                stats.s1_sd_v,
+                stats.s1_sd_l,
+                2.0f * stats.s1_sd_v,
+                2.0f * stats.s1_sd_l,
+                stats.s1_peak,
+                status_s1);
+
+    char line2[256];
+        snprintf(line2, sizeof(line2),
+            "S2,%lu,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d\r\n",
+            time_ms,
+            stats.s2_last_x,
+            stats.s2_last_y,
+            stats.s2_last_z,
+            stats.s2_rms_v,
+            stats.s2_rms_l,
+            stats.s2_sd_v,
+            stats.s2_sd_l,
+            2.0f * stats.s2_sd_v,
+            2.0f * stats.s2_sd_l,
+            stats.s2_peak,
+            status_s2);
+
+    char line3[100];
+        snprintf(line3, sizeof(line3),
+            "CFG,%lu,%d,%d\r\n",time_ms, FS_HZ, WINDOW_MS);
+
+
+            char event_line[200];
+
+        snprintf(event_line, sizeof(event_line),
+            "EVENT,%lu,S1=%.2f(%s),S2=%.2f(%s)\r\n",
+            time_ms,
+            stats.s1_peak, vib_level(stats.s1_peak),
+            stats.s2_peak, vib_level(stats.s2_peak));
+
+        
+        f_write(&fil, line, strlen(line), &bw);
+        f_write(&fil, line2, strlen(line2), &bw);
+        f_write(&fil, line3, strlen(line3), &bw);
+        f_write(&fil, event_line, strlen(event_line), &bw);
+        f_sync(&fil);   // ensure data saved
+
         xSemaphoreTake(xSPI2Mutex, portMAX_DELAY);
 
-        /* Call TCP_Task to maintain connection status */
+        // Call TCP_Task to maintain connection status 
         TCP_Task();
 
         usart_debug("\r\n----- UBMS CONTINUOUS DATA -----\r\n");
 
-        /* -- S1 packet (only if sensor is operational) -- */
+        // -- S1 packet (only if sensor is operational) 
         if (stats.s1_valid) {
             usart_debug("Accelerometer : S1\r\n");
             snprintf(tcp_buf, sizeof(tcp_buf),
@@ -326,7 +412,7 @@ static void vLogTask(void *pvParam)
             if (g_eth_ok) UBMS_Send_TCP(tcp_buf);
         }
 
-        /* -- S2 packet (only if sensor is operational) -- */
+        // -- S2 packet (only if sensor is operational) 
         if (stats.s2_valid) {
             usart_debug("Accelerometer : S2\r\n");
             snprintf(tcp_buf, sizeof(tcp_buf),
@@ -354,14 +440,14 @@ static void vLogTask(void *pvParam)
             if (g_eth_ok) UBMS_Send_TCP(tcp_buf);
         }
 
-        /* -- FS / window line -- */
+        //  FS / window line 
         snprintf(tcp_buf, sizeof(tcp_buf),
             "\r\nFS     : %d Hz\r\nWINDOW : %d ms\r\n",
             FS_HZ, WINDOW_MS);
         usart_debug(tcp_buf);
         if (g_eth_ok) UBMS_Send_TCP(tcp_buf);
 
-        /* -- Event alert (only for valid sensors) -- */
+        // Event alert (only for valid sensors) 
         if ((stats.s1_valid && stats.s1_peak >= EVENT_TH) ||
             (stats.s2_valid && stats.s2_peak >= EVENT_TH)) {
             snprintf(tcp_buf, sizeof(tcp_buf),
@@ -386,7 +472,7 @@ static void vLogTask(void *pvParam)
     }
 }
 
-/* -- HealthTask ------------------------------------------------------------ */
+//  HealthTask 
 static void vHealthTask(void *pvParam)
 {
     (void)pvParam;
@@ -402,7 +488,7 @@ static void vHealthTask(void *pvParam)
         HealthStatus_t prev_phy = health_get_phy();
         HealthStatus_t prev_tcp = health_get_tcp();
 
-        /* -- Sensor re-check (SPI1) -- */
+        //  Sensor re-check (SPI1) 
         xSemaphoreTake(xSPI1Mutex, portMAX_DELAY);
         uint8_t id1 = adxl345_read_id(1);
         uint8_t id2 = adxl345_read_id(2);
@@ -411,7 +497,7 @@ static void vHealthTask(void *pvParam)
         health_set_sensor(1, id1 == 0xE5 ? HEALTH_OK : HEALTH_FAIL, id1);
         health_set_sensor(2, id2 == 0xE5 ? HEALTH_OK : HEALTH_FAIL, id2);
 
-        /* -- ETH re-check (SPI2) -- */
+        //  ETH re-check (SPI2) 
         xSemaphoreTake(xSPI2Mutex, portMAX_DELAY);
         uint8_t ver = W5500_ReadVersion();
         uint8_t phy = W5500_GetPHYStatus();
@@ -428,7 +514,7 @@ static void vHealthTask(void *pvParam)
 
         xSemaphoreGive(xSPI2Mutex);
 
-        /* reprint only when something changed */
+        // reprint only when something changed 
         if (health_get_sensor(1) != prev_s1 || health_get_sensor(2) != prev_s2 ||
             health_get_w5500()   != prev_w55 || health_get_phy()    != prev_phy ||
             health_get_tcp()     != prev_tcp) {
@@ -438,14 +524,14 @@ static void vHealthTask(void *pvParam)
     }
 }
 
-/* -- HardFault handler ----------------------------------------------------- */
+// -- HardFault handler 
 void HardFault_Handler(void)
 {
     usart_debug("FATAL: HardFault\r\n");
     for (;;);
 }
 
-/* -- FreeRTOS hooks -------------------------------------------------------- */
+// -- FreeRTOS hooks 
 void vApplicationMallocFailedHook(void)
 {
     usart_debug("FATAL: FreeRTOS heap exhausted\r\n");
@@ -511,45 +597,28 @@ static void vBootTask(void *pvParam)
         }
     }
 }
-/* -- main ------------------------------------------------------------------ */
+
 int main(void)
 {
     /* PLL -> 96 MHz. Must be first -- all peripheral baud/timing depends on it */
     SystemClock_Config();
-
     USART2_Init();
+    int16_t ax, ay, az;
+
+
+    // sd card 
+        SDIO_Init();
+        SDIO_CardInit();
+        uint16_t rca = SD_GetRCA();
+        SD_SelectCard(rca);
+        g_sd_rca = rca;
+        /* NEW ADD  */
+        if (f_mount(&fs, "", 1) != FR_OK) {
+            usart_debug("FATFS MOUNT FAIL\r\n");
+        }
+    //==============================================================================
     print_boot_info("DATA LOGGER UNIT");  /* From boot_info.h */
     usart_debug("SYSTEM INITIALIZATION...\r\n");
-
-
-    //------------------------------
-  //  for (volatile int i = 0; i < 32000000; i++);
-    SDIO_Init();
-    SD_CardDetect_Test();
-    SDIO_Init();
-    SDIO_PinTest();
-   SDIO_Init();
-    SDIO_FullInit_Debug();
-
-    uint16_t rca = SD_GetRCA();
-    if (rca == 0) { usart_debug("RCA FAILED\r\n"); while(1); }
-
-    if (!SD_SelectCard(rca)) { usart_debug("SELECT FAILED\r\n"); while(1); }
-
-    g_sd_rca = rca;
-
-    SDIO->ICR = 0xFFFFFFFF;
-    SDIO->ARG = 0;
-    SDIO->CMD = (59U & 0x3F) | (1U << 10) | (1U << 6);
-
-    for (volatile int tt = 0; tt < 2000000; tt++)
-        if (SDIO->STA & ((1U<<6)|(1U<<1)|(1U<<2))) break;
-
-    usart_debug("CMD59 done\r\n");
-
-    SD_FatFsTest();
-    //------------------------------
-
     spi1_init();    /* ADXL345 x2 on SPI1 */
     
     /* Sensor health checks from accelerometer_health.h */
@@ -557,7 +626,6 @@ int main(void)
     sensor_max_range_check(1);
     sensor_max_range_check(2);
     sensor_static_check();
-    
     SPI2_Init();    /* W5500 on SPI2       */
     
     /* Ethernet health checks from ethernet_health.h */
@@ -568,6 +636,9 @@ int main(void)
     SysTick_Config(SystemCoreClock / 1000);
     usart_debug("\r\nDATA LOGGER BOOT\r\n");
 
+
+
+    //ADXL345_ReadXYZ(&ax, &ay, &az);
     /* ── Board info banner ─────────────────────────────────────────────────── */
     usart_debug("========================================\r\n");
     usart_debug("  UABAMS %s -- FreeRTOS %s\r\n", BOX_ID, FREERTOS_VER);
@@ -596,6 +667,7 @@ int main(void)
     uint8_t id1 = adxl345_read_id(1);
     health_set_sensor(1, id1 == 0xE5 ? HEALTH_OK : HEALTH_FAIL, id1);
     if (health_get_sensor(1) == HEALTH_OK) adxl345_init(1);
+    
 
     uint8_t id2 = adxl345_read_id(2);
     health_set_sensor(2, id2 == 0xE5 ? HEALTH_OK : HEALTH_FAIL, id2);
@@ -627,12 +699,13 @@ int main(void)
 
     /* LogTask: priority 3 -- runs when AccelTask is delaying between samples.
      * Stack 640 words = 2560 B -- covers snprintf(512 B) + W5500 init frames. */
-    xTaskCreate(vLogTask,    "Log",     640, NULL, 3, NULL);
+    xTaskCreate(vLogTask,    "Log",     1024, NULL, 3, NULL);
     xTaskCreate(vBootTask, "Boot", 512, NULL, 2, NULL);
 
     /* HealthTask: priority 1 (lowest) -- runs every 5 s during idle periods.
      * Stack 256 words = 1024 B -- only calls driver reads + usart_debug.    */
-    xTaskCreate(vHealthTask, "Health",  256, NULL, 1, NULL);
+    xTaskCreate(vHealthTask, "Health",  768, NULL, 1, NULL);
+
 
     usart_debug("Starting FreeRTOS scheduler...\r\n");
     xSchedulerStarted = 1;   /* allow SysTick_Handler to call xPortSysTickHandler */

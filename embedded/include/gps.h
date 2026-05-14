@@ -16,7 +16,7 @@ typedef struct
     char ew;
 
     uint32_t speed_cms;
-
+    uint8_t satellites;
     uint8_t hour;
     uint8_t minute;
     uint8_t second;
@@ -35,5 +35,6 @@ void gps_usart6_init(void);
 void gps_poll(void);        /* bare-metal: call in tight loop */
 void gps_feed(char c);      /* FreeRTOS: call with byte from ISR queue */
 void gps_rtc_init(void);
+void gps_get_copy(gps_data_t *copy);
 
 #endif

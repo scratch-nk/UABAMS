@@ -69,7 +69,7 @@ def on_message(client, userdata, msg):
             command = payload   # fallback plain text
 
         if command:
-            print(f"➡️ Forwarding to STM32: {command}")
+            print(f" Forwarding to STM32: {command}")
             ser.write((command + "\n").encode())
 
     except Exception as e:
@@ -129,11 +129,11 @@ def main():
             if "[GPS]" in line:
                 client.publish(MQTT_TOPIC_EVENT_GPS, line)
 
-                print("\n📍 GPS SENT ===")
+                print("\n GPS SENT ===")
                 print(line)
                 print("==============\n")
 
-                continue   #  VERY IMPORTANT
+                continue   # VERY IMPORTANT
 
             # ================= HEALTH START =================
             if "[HEALTH]" in line:
@@ -150,7 +150,7 @@ def main():
 
                     client.publish(MQTT_TOPIC_HEALTH, health_data)
 
-                    print("\n🩺 HEALTH SENT DATA Logger =================")
+                    print("\n HEALTH SENT DATA Logger =================")
                     print(health_data)
                     print("================================\n")
 
@@ -175,14 +175,14 @@ def main():
 
                     client.publish(MQTT_TOPIC_EVENT, event_data)
 
-                    print("\n🚨 EVENT SENT =================")
+                    print("\n EVENT SENT =================")
                     print(event_data)
                     print("================================\n")
 
                     event_buffer = []
                     event_active = False
 
-                    # ⚠️ Important → current line sensor ka hai
+                    # Important → current line sensor ka hai
                     # so process again
                     current_sensor = None
 
@@ -215,7 +215,7 @@ def main():
 
                     client.publish(MQTT_TOPIC_LEFT, left_data)
 
-                    print("\n📡 LEFT SENT ===")
+                    print("\n LEFT SENT ===")
                     print(left_data)
 
                     for l in left_buffer:
@@ -231,7 +231,7 @@ def main():
 
                     client.publish(MQTT_TOPIC_RIGHT, right_data)
 
-                    print("\n📡 RIGHT SENT ===")
+                    print("\n RIGHT SENT ===")
                     print(right_data)
 
                     for l in right_buffer:

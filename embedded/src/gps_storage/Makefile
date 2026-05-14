@@ -1,7 +1,7 @@
 PROJECT_ROOT  := ../..
 FREERTOS_ROOT := $(PROJECT_ROOT)/src/freertos
 FATFS_OBJ = $(wildcard ../../src/fatfs/obj/*.o)
-# Clock
+# Clock 
 # 96: PLL on HSI — full performance, correct USB clock (48 MHz)
 # 16: HSI direct — no PLL. Override: make -C src/gps_storage CPU_CLOCK_MHZ=16
 CPU_CLOCK_MHZ ?= 96
@@ -31,8 +31,8 @@ SRC = \
 # clock_config.c  — PLL setup (needed for 96 MHz, compiled for both speeds)
 # led_debug.c     — PWM LED, used for status indication
 LOCAL_CSRC = \
-    $(PROJECT_ROOT)/src/common/led_debug.c
-    # $(PROJECT_ROOT)/src/common/clock_config.c \ -- gps_storage uses SysTick_Config instead.
+    $(PROJECT_ROOT)/src/common/led_debug.c \
+    $(PROJECT_ROOT)/src/common/clock_config.c
 
 OBJDIR          = obj
 FREERTOS_OBJDIR = freertos_obj

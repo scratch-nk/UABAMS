@@ -2,6 +2,7 @@
 #include "spi_eth.h"
 #include "w5500.h"
 #include "usart_debug.h"
+#include "clock_config.h"
 #include "gps.h"
 #include "delay.h"
 #include "boot_info.h"
@@ -9,13 +10,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-// FreeRTOS headers
-#include "FreeRTOS.h"
+// FreeRTOS headers 
+#include "FreeRTOS.h" 
 #include "task.h"
-#include "queue.h"
+#include "queue.h" 
 #include <stdarg.h>
 #include "gps_health.h"
 
+#include <sdio.h>
+#include <math.h>
+#include "ff.h"
+#include "diskio.h"
+
+
+FATFS fs;
+
+volatile uint8_t debug_monitor = 0;
 extern volatile uint32_t ms_ticks;
 // FreeRTOS scheduler start flag for SysTick handler
 static volatile uint8_t xSchedulerStarted = 0;
@@ -89,10 +99,24 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
     for (;;);
 }
 
-//  Task 2: TCPSimpleTask
+//  Task 2: TCP
 void vTCPEthernetTask(void *pvParam)
 {
     (void)pvParam;
+    FIL fil_local;
+    UINT bw;
+    char log_line[512];
+    uint8_t file_opened = 0;
+
+    if (f_open(&fil_local, "data1.txt", FA_OPEN_ALWAYS | FA_WRITE) == FR_OK) {
+        f_lseek(&fil_local, f_size(&fil_local));
+        // open files : 
+        file_opened = 1;
+        usart_debug("FILE OPEN OK\r\n");
+    } else {
+        usart_debug("FILE OPEN FAIL\r\n");
+    }
+
     uint8_t rx_buf[512];
     uint8_t connected = 0;
 
@@ -100,9 +124,9 @@ void vTCPEthernetTask(void *pvParam)
 
     // W5500
     W5500_RST_LOW();
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(200));
     W5500_RST_HIGH();
-    vTaskDelay(pdMS_TO_TICKS(300));
+    vTaskDelay(pdMS_TO_TICKS(500));
 
    // W5500 version cheek
     uint8_t ver = W5500_ReadVersion();
@@ -120,6 +144,8 @@ void vTCPEthernetTask(void *pvParam)
     W5500_TCP_Server_Init(0, 5000);
     usart_debug("TCP SERVER LISTENING on port 5000...\r\n");
     usart_debug("IP: %d.%d.%d.%d\r\n", ip[0], ip[1], ip[2], ip[3]);
+    
+    uint32_t last_sync = xTaskGetTickCount();
     for (;;) {
         uint8_t status = W5500_GetSocketStatus(0);
 
@@ -130,22 +156,63 @@ void vTCPEthernetTask(void *pvParam)
                     connected = 1;
                 }
                 int len;
+                gps_data_t gps_local;
+                static char tcp_line_buf[1024]; // Larger buffer for line assembly
+                static int tcp_line_idx = 0;
+
                 // Receive data (leave 1 byte for null terminator)
                 while((len = W5500_Recv(0, rx_buf, sizeof(rx_buf) - 1)) > 0)
                 {
-                    rx_buf[len] = '\0';
-                    usart_debug((char*)rx_buf);
+                    for (int i = 0; i < len; i++) {
+                        char c = rx_buf[i];
+                        
+                        // Buffer character
+                        if (tcp_line_idx < sizeof(tcp_line_buf) - 1) {
+                            tcp_line_buf[tcp_line_idx++] = c;
+                        }
 
-                    // Print GPS data ONLY when we reach the end of a message (newline)
-                    // and GPS fix is valid.
-                    if (rx_buf[len-1] == '\n' && gps_data.valid)
-                    {
-                        usart_debug("\r\n[GPS] T-%02d:%02d:%02d D-%02d-%02d-%04d LAT:%ld%c LON:%ld%c SPD:%ldcm/s\r\n",
-                            gps_data.hour, gps_data.minute, gps_data.second,
-                            gps_data.day,  gps_data.month,  gps_data.year,
-                            gps_data.lat_i, gps_data.ns,
-                            gps_data.lon_i, gps_data.ew,
-                        gps_data.speed_cms);
+                        // On newline, process the complete line
+                        if (c == '\n') {
+                            tcp_line_buf[tcp_line_idx] = '\0';
+                            
+                            // Remove \r if present at the end
+                            if (tcp_line_idx > 0 && tcp_line_buf[tcp_line_idx-1] == '\r') {
+                                tcp_line_buf[tcp_line_idx-1] = '\0';
+                            }
+
+                            // Prepare log string
+                            // We look for 'FS :' which usually appears at the end of Axle Box blocks
+                            if (strstr(tcp_line_buf, "FS ") || strstr(tcp_line_buf, "UBMS")) {
+                                gps_get_copy(&gps_local);
+                                snprintf(log_line, sizeof(log_line), 
+                                    "%s | GPS:T-%02d:%02d:%02d SAT:%d LAT:%ld LON:%ld\r\n", 
+                                    tcp_line_buf,
+                                    gps_local.hour, gps_local.minute, gps_local.second,
+                                    gps_local.satellites, gps_local.lat_i, gps_local.lon_i);
+                            } else {
+                                // If the line is not empty, print it
+                                if (strlen(tcp_line_buf) > 0) {
+                                    snprintf(log_line, sizeof(log_line), "%s\r\n", tcp_line_buf);
+                                } else {
+                                    log_line[0] = '\0'; // Don't print empty lines
+                                }
+                            }
+                            
+                            if (log_line[0] != '\0') {
+                                // SD card write
+                                if (file_opened) {
+                                    f_write(&fil_local, log_line, strlen(log_line), &bw);
+                                    if ((xTaskGetTickCount() - last_sync) > pdMS_TO_TICKS(5000)) {
+                                        f_sync(&fil_local);
+                                        last_sync = xTaskGetTickCount();
+                                    }
+                                }
+                                // Debug print
+                                usart_debug(log_line);
+                            }
+                            
+                            tcp_line_idx = 0; // Reset for next line
+                        }
                     }
                 }
                 break;
@@ -181,6 +248,7 @@ void vTCPEthernetTask(void *pvParam)
 // GPS Task
 void vGPSTask(void *pvParam)
 {
+    
     (void)pvParam;
 
     uint16_t  ch;
@@ -195,7 +263,54 @@ void vGPSTask(void *pvParam)
         }
     }
 }
+void vDebugMonitorTask(void *pvParam)
+{
+    (void)pvParam;
 
+    while(1)
+    {
+        if(debug_monitor)
+        {
+            usart_debug("\r\n===== SYSTEM HEALTH =====\r\n");
+
+            // GPS
+            if(gps_data.valid)
+                usart_debug("GPS          : OK\r\n");
+            else
+                usart_debug("GPS          : FAIL\r\n");
+
+            // Satellites
+            usart_debug("SATELLITES   : %d\r\n",
+                         gps_data.satellites);
+
+            // Ethernet
+            uint8_t status = W5500_GetSocketStatus(0);
+
+            if(status == 0x17)
+                usart_debug("ETHERNET     : CONNECTED\r\n");
+            else
+                usart_debug("ETHERNET     : DISCONNECTED\r\n");
+
+            // SD CARD
+            if(f_mount(&fs, "", 0) == FR_OK)
+                usart_debug("SD CARD      : OK\r\n");
+            else
+                usart_debug("SD CARD      : FAIL\r\n");
+
+            // Heap
+            usart_debug("FREE HEAP    : %d\r\n",
+                        xPortGetFreeHeapSize());
+
+            // Uptime
+            usart_debug("UPTIME(ms)   : %lu\r\n",
+                        xTaskGetTickCount());
+
+            usart_debug("=========================\r\n");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
 static void vUartTask(void *pvParam)
 {
     (void)pvParam;
@@ -238,11 +353,21 @@ static void vUartTask(void *pvParam)
                     vTaskDelay(pdMS_TO_TICKS(100));
                     NVIC_SystemReset();
                 }
+
                 else if (strncmp(buffer, "HEALTH", 6) == 0)
                 {
                     usart_debug("HEALTH...\r\n");
                     vTaskDelay(pdMS_TO_TICKS(100));
                     gps_health_check();
+                }
+             else if (strncmp(buffer, "DEBUG", 5) == 0)
+                {
+                    debug_monitor = !debug_monitor;
+
+                    if(debug_monitor)
+                        usart_debug("DEBUG MONITOR ON\r\n");
+                    else
+                        usart_debug("DEBUG MONITOR OFF\r\n");
                 }
 
                 idx = 0; // reset buffer
@@ -291,11 +416,40 @@ void USART6_IRQHandler(void)
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
-
 int main(void)
 {
+    // PLL -> 96 MHz. Must be first -- all peripheral baud/timing depends on it
+    SystemClock_Config();
+
     // Initialize hardware
     USART2_Init();
+
+//==================================================================================
+SDIO_Init();
+
+// Full init sequence (VERY IMPORTANT)
+SDIO_FullInit_Debug();   
+
+uint16_t rca = SD_GetRCA();
+usart_debug("RCA: %d\r\n", rca);
+if (rca == 0) {
+    usart_debug("RCA FAILED\r\n");
+    while(1);
+}
+
+if (!SD_SelectCard(rca)) {
+    usart_debug("SELECT FAILED\r\n");
+    while(1);
+}
+
+g_sd_rca = rca;
+
+    if (f_mount(&fs, "", 1) != FR_OK) {
+        usart_debug("FATFS MOUNT FAIL\r\n");
+    } else {
+        usart_debug("FATFS MOUNT OK\r\n");
+    }
+//==============================================================================
     /* Queue create */
     uartQueue = xQueueCreate(32, sizeof(uint8_t));
     /* GPS queue + USART6 RX interrupt */
@@ -304,6 +458,7 @@ int main(void)
     /* UART RX interrupt enable */
     USART2->CR1 |= USART_CR1_RE;
     USART2->CR1 |= USART_CR1_RXNEIE;
+    NVIC_SetPriority(USART2_IRQn, 6);
     NVIC_EnableIRQ(USART2_IRQn);
 
     gps_usart6_init();
@@ -335,7 +490,7 @@ int main(void)
    // TASKS CREATION
 
    // Task 2: TCPSimpleTask
-    if (xTaskCreate(vTCPEthernetTask, "TCP", 1024, NULL, 2, NULL) != pdPASS) {
+    if (xTaskCreate(vTCPEthernetTask, "TCP", 2048, NULL, 2, NULL) != pdPASS) {
         usart_debug("Failed to create TCPSimpleTask\r\n");
     } else {
         usart_debug("TCPSimpleTask created\r\n");
@@ -345,7 +500,8 @@ int main(void)
 
     xTaskCreate(vUartTask, "UART", 512, NULL, 3, NULL);
     xTaskCreate(vGPSHealthTask, "GPS_HEALTH", 512, NULL, 2, NULL);
-
+    xTaskCreate(vDebugMonitorTask,"DEBUG", 1024, NULL, 1, NULL);
+    
     usart_debug("\r\nAll tasks created. Starting scheduler...\r\n");
     usart_debug("========================================\r\n\r\n");
 
@@ -358,4 +514,3 @@ int main(void)
     usart_debug("FATAL: Scheduler returned\r\n");
     for (;;);
 }
-
