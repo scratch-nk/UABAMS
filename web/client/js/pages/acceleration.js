@@ -81,7 +81,7 @@ async function fetchChannels() {
             .then(r => r.json());
 
         if (!Array.isArray(data) || data.length === 0) {
-            // No data — clear chart, show dashes
+            // No data — clear chart, show dashes, mark OFFLINE
             channels.forEach((ch, i) => {
                 mainChart.data.datasets[i].data = Array(CHART_POINTS).fill(null);
                 document.getElementById(ch.legendId).textContent = '— g';
@@ -90,6 +90,10 @@ async function fetchChannels() {
             mainChart.data.labels = Array(CHART_POINTS).fill('');
             mainChart.update('none');
             document.getElementById('lastUpdate').textContent = 'No data';
+            const liveDot  = document.querySelector('.live-dot');
+            const liveText = document.querySelector('.status-text');
+            if (liveDot)  liveDot.style.background = '#ef4444';
+            if (liveText) liveText.textContent      = 'OFFLINE';
             return;
         }
 
@@ -135,6 +139,14 @@ async function fetchChannels() {
             hour: '2-digit', minute: '2-digit', second: '2-digit',
             hour12: false
         });
+
+        // Update LIVE / OFFLINE indicator based on data staleness
+        const isLive = ageSec < (STALE_MS / 1000);
+        const liveDot  = document.querySelector('.live-dot');
+        const liveText = document.querySelector('.status-text');
+        if (liveDot)  liveDot.style.background  = isLive ? '#22c55e' : '#ef4444';
+        if (liveText) liveText.textContent       = isLive ? 'LIVE' : 'OFFLINE';
+
         fetch(`${API}/api/management/active-sensors`)
             .then(r => r.json())
             .then(s => {

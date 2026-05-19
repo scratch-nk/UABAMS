@@ -291,8 +291,7 @@ const previousWarningState = {
 };
 
 // ── Last active timestamps and detailed communication ─────────────────────
-let wasHardwareOnline = false; 
-let lastLeftTime = null, lastRightTime = null, lastGpsTime = null; showInfoUntil = 0;
+let lastLeftTime = null, lastRightTime = null, lastGpsTime = null;
 
 function formatLogTime(isoString) {
     if (!isoString) return '--';
@@ -322,14 +321,6 @@ function updateHardwareStatus() {
     const gpsOnline = lastGpsTime && (now - new Date(lastGpsTime).getTime() < 30000);
     const anyOnline = leftOnline || rightOnline || gpsOnline;
 
-    // Detect transition from offline to online
-    if (anyOnline && !wasHardwareOnline) {
-        showInfoUntil = now + 5000; // show info for 5 seconds after coming online
-    }
-    wasHardwareOnline = anyOnline;
-
-    const showInfo = now < showInfoUntil;
-
     const currentTime = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
     const leftFail = healthStatus.adxl345_s1 === 'FAIL';
     const rightFail = healthStatus.adxl345_s2 === 'FAIL';
@@ -345,10 +336,7 @@ function updateHardwareStatus() {
     const logEntries = [];
 
     function addEntry(type, message, sensor, stateKey) {
-        // Show info entries only during the 5-second window; warnings always shown
-        if (type === 'warning' || (type === 'info' && showInfo)) {
-            logEntries.push({ time: currentTime, type, message, sensor });
-        }
+        logEntries.push({ time: currentTime, type, message, sensor });
 
         // Trigger popup only for warnings and only on state change
         if (stateKey && type === 'warning') {
@@ -398,30 +386,22 @@ function updateHardwareStatus() {
 
 async function fetchLatestTimestamps() {
     try {
-        const res = await fetch(`${SERVER}/api/monitoring/all`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const allDocs = await res.json();
-        let latestLeft = null, latestRight = null, latestGps = null;
-        for (const doc of allDocs) {
-            if (!doc.timestamp) continue;
-            if (doc.device_id === 'left') {
-                if (!latestLeft || doc.timestamp > latestLeft) latestLeft = doc.timestamp;
-            } else if (doc.device_id === 'right') {
-                if (!latestRight || doc.timestamp > latestRight) latestRight = doc.timestamp;
-            } else if (doc.device_id === 'gps') {
-                if (!latestGps || doc.timestamp > latestGps) latestGps = doc.timestamp;
-            }
+        const [sensorRes, gpsRes] = await Promise.all([
+            fetch(`${SERVER}/api/latest/sensor`),
+            fetch(`${SERVER}/api/latest/gps`)
+        ]);
+
+        if (sensorRes.ok) {
+            const data = await sensorRes.json();
+            if (data.left?.timestamp)  lastLeftTime  = data.left.timestamp;
+            if (data.right?.timestamp) lastRightTime = data.right.timestamp;
         }
-        if (latestLeft) lastLeftTime = latestLeft;
-        if (latestRight) lastRightTime = latestRight;
-        if (latestGps) lastGpsTime = latestGps;
-        if (!lastGpsTime) {
-            try {
-                const gpsRes = await fetch(`${SERVER}/api/latest/gps`);
-                const gpsData = await gpsRes.json();
-                if (gpsData && gpsData.timestamp) lastGpsTime = gpsData.timestamp;
-            } catch (e) {}
+
+        if (gpsRes.ok) {
+            const gpsData = await gpsRes.json();
+            if (gpsData?.timestamp) lastGpsTime = gpsData.timestamp;
         }
+
         updateHardwareStatus();
     } catch (e) {
         console.warn('Failed to fetch timestamps:', e);

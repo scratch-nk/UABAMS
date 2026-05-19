@@ -16,7 +16,7 @@ function updateOnlineStatus() {
     const now = Date.now();
     const wasOnline = isHardwareOnline;
     isHardwareOnline = (now - lastSensorDataTime) < DATA_TIMEOUT_MS;
-    
+
     // If we just went offline and the 24h tab is active, switch to yesterday timeseries
     if (wasOnline && !isHardwareOnline && currentPeriod === 1) {
         console.log('[RCI] Hardware offline → loading yesterday timeseries');
@@ -25,7 +25,7 @@ function updateOnlineStatus() {
     // If we just came online and the 24h tab is active, clear to live rolling mode
     if (!wasOnline && isHardwareOnline && currentPeriod === 1) {
         console.log('[RCI] Hardware online → switching to LIVE rolling');
-        rciChart.data.labels           = emptyLabels(RCI_N);
+        rciChart.data.labels = emptyLabels(RCI_N);
         rciChart.data.datasets[0].data = new Array(RCI_N).fill(null);
         rciChart.options.scales.x.ticks.maxTicksLimit = 8;
         rciChart.update();
@@ -67,11 +67,11 @@ function advanceDistance() { distanceM += 10; }
 
 // ── Rolling buffers ───────────────────────────────────────────────────────
 const DIST_N = 100;
-const RAW_N  = 80;
-const RCI_N  = 60;
+const RAW_N = 80;
+const RCI_N = 60;
 
-function zeroBuf(n, v = 0) { return new Array(n).fill(v); }
-function emptyLabels(n)    { return new Array(n).fill(''); }
+function zeroBuf(n, v = null) { return new Array(n).fill(v); }
+function emptyLabels(n) { return new Array(n).fill(''); }
 
 const initDistLabels = Array.from({ length: DIST_N }, (_, i) => formatDistLabel(BASE_DISTANCE_M + i * 10));
 
@@ -91,10 +91,10 @@ const distanceChart = new Chart(document.getElementById('distanceChart').getCont
     data: {
         labels: [...initDistLabels],
         datasets: [
-            { label: 'AB-L-VERT', data: zeroBuf(DIST_N), borderColor: '#22c55e', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-            { label: 'AB-L-LAT',  data: zeroBuf(DIST_N), borderColor: '#eab308', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-            { label: 'AB-R-VERT', data: zeroBuf(DIST_N), borderColor: '#ef4444', borderWidth: 2, tension: 0.3, pointRadius: 0 },
-            { label: 'AB-R-LAT',  data: zeroBuf(DIST_N), borderColor: '#8b5cf6', borderWidth: 2, tension: 0.3, pointRadius: 0 }
+            { label: 'AB-L-VERT', data: zeroBuf(DIST_N), borderColor: '#22c55e', borderWidth: 2, tension: 0.3, pointRadius: 0, spanGaps: false },
+            { label: 'AB-L-LAT',  data: zeroBuf(DIST_N), borderColor: '#eab308', borderWidth: 2, tension: 0.3, pointRadius: 0, spanGaps: false },
+            { label: 'AB-R-VERT', data: zeroBuf(DIST_N), borderColor: '#ef4444', borderWidth: 2, tension: 0.3, pointRadius: 0, spanGaps: false },
+            { label: 'AB-R-LAT',  data: zeroBuf(DIST_N), borderColor: '#8b5cf6', borderWidth: 2, tension: 0.3, pointRadius: 0, spanGaps: false }
         ]
     },
     options: {
@@ -111,6 +111,7 @@ const distanceChart = new Chart(document.getElementById('distanceChart').getCont
 function makeSubplot(id, color, initVal = 0) {
     const canvas = document.getElementById(id);
     if (!canvas) return null;
+    const isZ = initVal > 1;   // Z axis initialised at 9.8g, X/Y at 0
     return new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
@@ -121,7 +122,12 @@ function makeSubplot(id, color, initVal = 0) {
             responsive: true, maintainAspectRatio: false, animation: false,
             plugins: { legend: { display: false }, tooltip: { enabled: false } },
             scales: {
-                y: { grid: { color: '#f1f5f9' }, ticks: { maxTicksLimit: 3, font: { size: 9 }, color: '#94a3b8', callback: v => v.toFixed(2) } },
+                y: {
+                    suggestedMin: isZ ? 8.5 : -0.5,
+                    suggestedMax: isZ ? 11.0 : 0.5,
+                    grid: { color: '#f1f5f9' },
+                    ticks: { maxTicksLimit: 3, font: { size: 9 }, color: '#94a3b8', callback: v => v.toFixed(2) }
+                },
                 x: { display: false }
             }
         }
@@ -162,7 +168,7 @@ let _configuredOdrHz = 100;   // updated from /api/odr-config on load + socket e
 
 function _getSperlingBf() {
     if (_configuredOdrHz >= 150) return 0.18;
-    if (_configuredOdrHz >= 75)  return 0.325;
+    if (_configuredOdrHz >= 75) return 0.325;
     return 0.48;
 }
 
@@ -177,11 +183,11 @@ function calculateSperlingWz(rmsG) {
 function setRCIStatus(wz) {
     const el = document.getElementById('rciStatus');
     if (!el) return;
-    if (wz <= 2.0)      { el.textContent = 'Excellent'; el.className = 'rci-status status-excellent'; }
-    else if (wz <= 2.75){ el.textContent = 'Good';      el.className = 'rci-status status-good'; }
-    else if (wz <= 3.25){ el.textContent = 'Fair';      el.className = 'rci-status status-fair'; }
-    else if (wz <= 3.75){ el.textContent = 'Poor';      el.className = 'rci-status status-poor'; }
-    else                { el.textContent = 'Very Poor'; el.className = 'rci-status status-poor'; }
+    if (wz <= 2.0) { el.textContent = 'Excellent'; el.className = 'rci-status status-excellent'; }
+    else if (wz <= 2.75) { el.textContent = 'Good'; el.className = 'rci-status status-good'; }
+    else if (wz <= 3.25) { el.textContent = 'Fair'; el.className = 'rci-status status-fair'; }
+    else if (wz <= 3.75) { el.textContent = 'Poor'; el.className = 'rci-status status-poor'; }
+    else { el.textContent = 'Very Poor'; el.className = 'rci-status status-poor'; }
 }
 
 // ── RCI Chart ─────────────────────────────────────────────────────────────
@@ -201,15 +207,15 @@ const rciZoneBandPlugin = {
         const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
         if (!y) return;
         const bands = [
-            { from: 0,    to: 2.0,  color: 'rgba(34,197,94,0.08)'  },   // Excellent
-            { from: 2.0,  to: 2.75, color: 'rgba(59,130,246,0.08)' },   // Good
-            { from: 2.75, to: 3.25, color: 'rgba(234,179,8,0.10)'  },   // Fair
+            { from: 0, to: 2.0, color: 'rgba(34,197,94,0.08)' },   // Excellent
+            { from: 2.0, to: 2.75, color: 'rgba(59,130,246,0.08)' },   // Good
+            { from: 2.75, to: 3.25, color: 'rgba(234,179,8,0.10)' },   // Fair
             { from: 3.25, to: 3.75, color: 'rgba(249,115,22,0.12)' },   // Poor
-            { from: 3.75, to: 99,   color: 'rgba(239,68,68,0.12)'  },   // Very Poor
+            { from: 3.75, to: 99, color: 'rgba(239,68,68,0.12)' },   // Very Poor
         ];
         ctx.save();
         for (const b of bands) {
-            const yTop    = Math.max(y.getPixelForValue(b.to),  top);
+            const yTop = Math.max(y.getPixelForValue(b.to), top);
             const yBottom = Math.min(y.getPixelForValue(b.from), bottom);
             if (yTop >= yBottom) continue;
             ctx.fillStyle = b.color;
@@ -246,11 +252,11 @@ const rciChart = new Chart(document.getElementById('rciChart').getContext('2d'),
                 callbacks: {
                     label: ctx => {
                         const wz = ctx.parsed.y;
-                        const grade = wz <= 2.0  ? 'Excellent'
-                                    : wz <= 2.75 ? 'Good'
-                                    : wz <= 3.25 ? 'Fair'
+                        const grade = wz <= 2.0 ? 'Excellent'
+                            : wz <= 2.75 ? 'Good'
+                                : wz <= 3.25 ? 'Fair'
                                     : wz <= 3.75 ? 'Poor'
-                                    : 'Very Poor';
+                                        : 'Very Poor';
                         return `Wz ${wz.toFixed(2)} — ${grade}`;
                     }
                 }
@@ -276,10 +282,11 @@ const rciChart = new Chart(document.getElementById('rciChart').getContext('2d'),
 // ── Tab state ─────────────────────────────────────────────────────────────
 let currentPeriod = 1;   // 1=24h, 7=7d, 30=30d
 
+
 // ── Fetch average Wz (for historical summary cards only) ──────────────────
 async function fetchAverageWz(days) {
     try {
-        const res  = await fetch(`${SERVER_URL}/api/rci/average?days=${days}`);
+        const res = await fetch(`${SERVER_URL}/api/rci/average?days=${days}`);
         const data = await res.json();
         if (data.avgRms != null) return calculateSperlingWz(data.avgRms);
         return null;
@@ -292,9 +299,10 @@ async function fetchAverageWz(days) {
 // ── Fetch RCI timeseries from DB and render on chart ──────────────────────
 // period: '24h' | '7d' | '30d'
 // API returns raw rms_v_g (g-units).  ALL Sperling computation is done here.
+
 async function fetchAndRenderRCITimeseries(period) {
     try {
-        const res  = await fetch(`${SERVER_URL}/api/rci/timeseries?period=${period}`);
+        const res = await fetch(`${SERVER_URL}/api/rci/timeseries?period=${period}`);
         const data = await res.json();
 
         if (!data.points || !data.points.length) {
@@ -343,22 +351,22 @@ async function fetchAndRenderRCITimeseries(period) {
         });
 
         // ── Push to chart — Y-axis will auto-scale to actual Wz range ────
-        rciChart.data.labels              = labels;
-        rciChart.data.datasets[0].data   = wzValues;
+        rciChart.data.labels = labels;
+        rciChart.data.datasets[0].data = wzValues;
         rciChart.options.scales.x.ticks.maxTicksLimit = period === '24h' ? 12 : (period === '7d' ? 14 : 15);
         rciChart.update();
 
         // ── Stats ────────────────────────────────────────────────────────
-        const sumWz   = validWz.reduce((a, b) => a + b, 0);
-        const avgWz   = sumWz / validWz.length;
-        const bestWz  = Math.min(...validWz);    // lower Wz = smoother ride
+        const sumWz = validWz.reduce((a, b) => a + b, 0);
+        const avgWz = sumWz / validWz.length;
+        const bestWz = Math.min(...validWz);    // lower Wz = smoother ride
         const worstWz = Math.max(...validWz);
         const latestWz = wzValues[wzValues.length - 1] ?? wzValues.find(v => v !== null);
 
         document.getElementById('rciCurrent').textContent = latestWz.toFixed(1);
         setRCIStatus(latestWz);
-        document.getElementById('rciAvg').textContent   = avgWz.toFixed(1);
-        document.getElementById('rciBest').textContent  = bestWz.toFixed(1);
+        document.getElementById('rciAvg').textContent = avgWz.toFixed(1);
+        document.getElementById('rciBest').textContent = bestWz.toFixed(1);
         document.getElementById('rciWorst').textContent = worstWz.toFixed(1);
 
         // Debug log with full unit chain
@@ -367,8 +375,8 @@ async function fetchAndRenderRCITimeseries(period) {
         console.log(
             `[RCI] period=${period} | ODR=${_configuredOdrHz}Hz Bf=${_bf} | ${validWz.length} pts | ` +
             `latest rms=${sampleRmsG}g → ` +
-            `a=${(sampleRmsG*981).toFixed(1)} cm/s² → ` +
-            `a_weighted=${(sampleRmsG*981*_bf).toFixed(1)} cm/s² → ` +
+            `a=${(sampleRmsG * 981).toFixed(1)} cm/s² → ` +
+            `a_weighted=${(sampleRmsG * 981 * _bf).toFixed(1)} cm/s² → ` +
             `Wz=${latestWz.toFixed(2)} | avg=${avgWz.toFixed(2)} best=${bestWz.toFixed(2)} worst=${worstWz.toFixed(2)}`
         );
 
@@ -383,11 +391,11 @@ async function fetchAndRenderRCITimeseries(period) {
 // ── Update historical summary cards ──────────────────────────────────────
 async function updateHistoricalCards() {
     const yesterdayWz = await fetchAverageWz(1);
-    const weekWz      = await fetchAverageWz(7);
-    const monthWz     = await fetchAverageWz(30);
+    const weekWz = await fetchAverageWz(7);
+    const monthWz = await fetchAverageWz(30);
     if (yesterdayWz !== null) document.getElementById('rciYesterday').textContent = yesterdayWz.toFixed(1);
-    if (weekWz      !== null) document.getElementById('rciWeekAvg').textContent   = weekWz.toFixed(1);
-    if (monthWz     !== null) document.getElementById('rciMonthAvg').textContent  = monthWz.toFixed(1);
+    if (weekWz !== null) document.getElementById('rciWeekAvg').textContent = weekWz.toFixed(1);
+    if (monthWz !== null) document.getElementById('rciMonthAvg').textContent = monthWz.toFixed(1);
 }
 
 // ── Activate tab (called on tab click or programmatically) ─────────────────
@@ -401,8 +409,8 @@ async function activateRCITab(days) {
         if (isHardwareOnline) {
             // Hardware ONLINE: live rolling mode — reset chart to empty, socket data will fill it
             console.log('[RCI] 24h tab: hardware ONLINE → LIVE rolling');
-            rciChart.data.labels             = emptyLabels(RCI_N);
-            rciChart.data.datasets[0].data   = new Array(RCI_N).fill(null);
+            rciChart.data.labels = emptyLabels(RCI_N);
+            rciChart.data.datasets[0].data = new Array(RCI_N).fill(null);
             rciChart.options.scales.x.ticks.maxTicksLimit = 8;
             rciChart.update();
         } else {
@@ -411,11 +419,11 @@ async function activateRCITab(days) {
             const result = await fetchAndRenderRCITimeseries('24h');
             if (!result) {
                 // No data at all — show empty chart
-                rciChart.data.labels           = emptyLabels(RCI_N);
+                rciChart.data.labels = emptyLabels(RCI_N);
                 rciChart.data.datasets[0].data = new Array(RCI_N).fill(null);
                 rciChart.update();
-                document.getElementById('rciAvg').textContent   = '—';
-                document.getElementById('rciBest').textContent  = '—';
+                document.getElementById('rciAvg').textContent = '—';
+                document.getElementById('rciBest').textContent = '—';
                 document.getElementById('rciWorst').textContent = '—';
             }
         }
@@ -425,11 +433,11 @@ async function activateRCITab(days) {
         console.log(`[RCI] ${periodStr} tab → fetching timeseries`);
         const result = await fetchAndRenderRCITimeseries(periodStr);
         if (!result) {
-            rciChart.data.labels           = emptyLabels(RCI_N);
+            rciChart.data.labels = emptyLabels(RCI_N);
             rciChart.data.datasets[0].data = new Array(RCI_N).fill(null);
             rciChart.update();
-            document.getElementById('rciAvg').textContent   = '—';
-            document.getElementById('rciBest').textContent  = '—';
+            document.getElementById('rciAvg').textContent = '—';
+            document.getElementById('rciBest').textContent = '—';
             document.getElementById('rciWorst').textContent = '—';
         }
     }
@@ -437,8 +445,8 @@ async function activateRCITab(days) {
 
 // ── Sensor cache ──────────────────────────────────────────────────────────
 const cache = {
-    left:  { x:0, y:0, z:0, vert:0, lat:0, rms: null },
-    right: { x:0, y:0, z:0, vert:0, lat:0, rms: null }
+    left: { x: 0, y: 0, z: 0, vert: 0, lat: 0, rms: null },
+    right: { x: 0, y: 0, z: 0, vert: 0, lat: 0, rms: null }
 };
 
 let rafPending = false;
@@ -493,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
             _configuredOdrHz = (cfg.accel1 + cfg.accel2) / 2;
             console.log(`[graphs] ODR loaded → ${_configuredOdrHz}Hz  Bf=${_getSperlingBf()}`);
         })
-        .catch(() => {});
+        .catch(() => { });
 });
 
 // ── Live data handler ─────────────────────────────────────────────────────
@@ -510,18 +518,18 @@ socket.on('accelerometer-data', data => {
     const rmsV = (data.rmsV != null && data.rmsV > 0) ? data.rmsV : null;
 
     const vert = getVert(x, y, z);
-    const lat  = getLat(x, y, z);
+    const lat = getLat(x, y, z);
 
     // Update cache with raw values
-    cache[side].x    = x;
-    cache[side].y    = y;
-    cache[side].z    = z;
+    cache[side].x = x;
+    cache[side].y = y;
+    cache[side].z = z;
     cache[side].vert = vert;
-    cache[side].lat  = lat;
-    cache[side].rms  = rmsV;   // store RMS (g)
+    cache[side].lat = lat;
+    cache[side].rms = rmsV;   // store RMS (g)
 
     // Raw subplots
-    const sp  = side === 'left' ? subplots.s1 : subplots.s2;
+    const sp = side === 'left' ? subplots.s1 : subplots.s2;
     const pfx = side === 'left' ? 'raw1' : 'raw2';
     pushSubplot(sp.x, x);
     pushSubplot(sp.y, y);
@@ -532,7 +540,7 @@ socket.on('accelerometer-data', data => {
     document.getElementById(pfx + 'Z').textContent = z.toFixed(4) + ' g';
 
     const now = new Date();
-    document.getElementById(pfx + 'RefreshTime').textContent = '🕐 ' + now.toLocaleTimeString('en-IN', {hour12:false}) + ' ' + now.toLocaleDateString('en-IN');
+    document.getElementById(pfx + 'RefreshTime').textContent = '🕐 ' + now.toLocaleTimeString('en-IN', { hour12: false }) + ' ' + now.toLocaleDateString('en-IN');
 
     // ── Distance chart (left sensor drives distance) ──────────────────────
     if (side === 'left') {
@@ -546,7 +554,7 @@ socket.on('accelerometer-data', data => {
     }
 
     // ── RCI: Use average RMS from both accelerometers ─────────────────────
-    const leftRms  = cache.left.rms;
+    const leftRms = cache.left.rms;
     const rightRms = cache.right.rms;
     let avgRms = null;
 
@@ -571,13 +579,13 @@ socket.on('accelerometer-data', data => {
                 rollDataset(rciChart, 0, wz, distLabel);
                 const rciData = rciChart.data.datasets[0].data.filter(v => v !== null);
                 if (rciData.length) {
-                    const avgRCI  = rciData.reduce((a, b) => a + b, 0) / rciData.length;
-                    const bestWz  = Math.min(...rciData);
+                    const avgRCI = rciData.reduce((a, b) => a + b, 0) / rciData.length;
+                    const bestWz = Math.min(...rciData);
                     const worstWz = Math.max(...rciData);
                     document.getElementById('rciCurrent').textContent = wz.toFixed(1);
-                    document.getElementById('rciAvg').textContent    = avgRCI.toFixed(1);
-                    document.getElementById('rciBest').textContent   = bestWz.toFixed(1);
-                    document.getElementById('rciWorst').textContent  = worstWz.toFixed(1);
+                    document.getElementById('rciAvg').textContent = avgRCI.toFixed(1);
+                    document.getElementById('rciBest').textContent = bestWz.toFixed(1);
+                    document.getElementById('rciWorst').textContent = worstWz.toFixed(1);
                 }
             } else {
                 // Right sensor only updates current reading, chart waits for left
@@ -592,13 +600,14 @@ socket.on('accelerometer-data', data => {
     }
 
     // Update legend values (always)
-    document.getElementById('distVal1').textContent = cache.left.vert.toFixed(4)  + ' g';
-    document.getElementById('distVal2').textContent = cache.left.lat.toFixed(4)   + ' g';
+    document.getElementById('distVal1').textContent = cache.left.vert.toFixed(4) + ' g';
+    document.getElementById('distVal2').textContent = cache.left.lat.toFixed(4) + ' g';
     document.getElementById('distVal3').textContent = cache.right.vert.toFixed(4) + ' g';
-    document.getElementById('distVal4').textContent = cache.right.lat.toFixed(4)  + ' g';
+    document.getElementById('distVal4').textContent = cache.right.lat.toFixed(4) + ' g';
 
     scheduleRender();
 });
+
 
 // ── Raw DB polling (fallback) ─────────────────────────────────────────────
 async function fetchRawFromDB() {

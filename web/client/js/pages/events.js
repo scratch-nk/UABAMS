@@ -18,6 +18,12 @@ let allEvents  = [];
 let filterVal  = 'all';
 let lastIsoTime = '';
 
+// Read history range from URL params (set by parent index.js)
+const _urlParams = new URLSearchParams(window.location.search);
+const HISTORY_FROM = _urlParams.get('from');
+const HISTORY_TO   = _urlParams.get('to');
+const IS_HISTORY   = !!(HISTORY_FROM && HISTORY_TO);
+
 // Null until fetched — no hardcoded defaults
 let thresholds = { p1Min: null, p1Max: null, p2Min: null, p2Max: null, p3Min: null };
 
@@ -101,11 +107,15 @@ async function fetchEvents() {
     await updateConnectionStatus();
 
     try {
-        const data       = await fetch(`${API}/api/impacts`).then(r => r.json());
+        const url = new URL(`${API}/api/impacts`);
+        if (HISTORY_FROM) url.searchParams.set('from', HISTORY_FROM);
+        if (HISTORY_TO)   url.searchParams.set('to',   HISTORY_TO);
+
+        const data       = await fetch(url).then(r => r.json());
         const normalised = data.map(normalise);
 
-        // Mark genuinely new arrivals
-        if (lastIsoTime) {
+        // In history mode don't track "new" arrivals — all data is historical
+        if (!IS_HISTORY && lastIsoTime) {
             normalised.forEach(e => { if (e.isoTime > lastIsoTime) e.isNew = true; });
         }
         if (normalised.length) {
@@ -114,7 +124,7 @@ async function fetchEvents() {
         }
 
         allEvents = normalised;
-        renderAll(normalised.some(e => e.isNew));
+        renderAll(!IS_HISTORY && normalised.some(e => e.isNew));
     } catch (e) {
         console.error('[events] fetch impacts:', e);
     }
@@ -185,7 +195,20 @@ window.exportEvents = exportEvents;
 // ── Boot — show Offline immediately, then start polling ───────────────────
 (function init() {
     const statusEl = document.getElementById('connStatus');
-    if (statusEl) { statusEl.textContent = 'Offline'; statusEl.className = 'conn-status conn-off'; }
-    fetchEvents();
-    setInterval(fetchEvents, 2000);
+    if (IS_HISTORY) {
+        // History mode — show banner, fetch once, no polling
+        if (statusEl) { statusEl.textContent = 'History'; statusEl.className = 'conn-status'; statusEl.style.background = '#7c3aed'; statusEl.style.color = '#fff'; }
+        const header = document.querySelector('.page-header, .header');
+        if (header) {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'background:#7c3aed;color:#fff;padding:6px 16px;font-size:13px;border-radius:6px;margin-bottom:8px;';
+            banner.textContent = `Showing history: ${new Date(HISTORY_FROM).toLocaleString('en-IN', {timeZone:'Asia/Kolkata'})} → ${new Date(HISTORY_TO).toLocaleString('en-IN', {timeZone:'Asia/Kolkata'})}`;
+            header.prepend(banner);
+        }
+        fetchEvents();
+    } else {
+        if (statusEl) { statusEl.textContent = 'Offline'; statusEl.className = 'conn-status conn-off'; }
+        fetchEvents();
+        setInterval(fetchEvents, 2000);
+    }
 })();

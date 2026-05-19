@@ -157,13 +157,8 @@ window.preloadGraphHistory = async function(distChart, subplotsObj, rollFn, push
             const x    = pt.x ?? 0;
             const y    = pt.y ?? 0;
             const z    = pt.z ?? 0;
-            const vert = Math.abs(z);
-            const lat  = Math.sqrt(x*x + y*y);
-            const lbl  = new Date(pt.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false });
-
-            distChart.data.labels[i]                = lbl;
-            distChart.data.datasets[0].data[i]      = vert;  // AB-L-VERT
-            distChart.data.datasets[1].data[i]      = lat;   // AB-L-LAT
+            distChart.data.datasets[0].data[i] = Math.abs(z);          // AB-L-VERT
+            distChart.data.datasets[1].data[i] = Math.sqrt(x*x + y*y); // AB-L-LAT
         });
 
         // Fill right channels from right history
