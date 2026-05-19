@@ -327,6 +327,54 @@ function loadPage(pageUrl) {
 window.loadPage      = loadPage;
 window.setAccelStatus = setAccelStatus;
 
+// ── History range (shared with iframe pages via window.HISTORY_FROM/TO) ──
+window.HISTORY_FROM = null;
+window.HISTORY_TO   = null;
+
+function applyHistoryRange() {
+    const from = document.getElementById('rangeFrom').value;
+    const to   = document.getElementById('rangeTo').value;
+    if (!from || !to) { alert('Please select both From and To dates.'); return; }
+
+    window.HISTORY_FROM = new Date(from).toISOString();
+    window.HISTORY_TO   = new Date(to).toISOString();
+
+    // Update button label
+    const label = document.getElementById('historyBtnLabel');
+    if (label) label.textContent = new Date(from).toLocaleDateString('en-IN') + ' – ' + new Date(to).toLocaleDateString('en-IN');
+
+    // Reload the current iframe with range params
+    const iframe = document.getElementById('content-frame');
+    if (iframe && iframe.src) {
+        const url = new URL(iframe.src);
+        url.searchParams.set('from', window.HISTORY_FROM);
+        url.searchParams.set('to',   window.HISTORY_TO);
+        iframe.src = url.toString();
+    }
+
+    // Close dropdown
+    document.getElementById('historyDropdown').style.display = 'none';
+}
+
+function goLive() {
+    window.HISTORY_FROM = null;
+    window.HISTORY_TO   = null;
+
+    const label = document.getElementById('historyBtnLabel');
+    if (label) label.textContent = 'History';
+
+    // Reload iframe without range params
+    const iframe = document.getElementById('content-frame');
+    if (iframe && iframe.src) {
+        const url = new URL(iframe.src);
+        url.searchParams.delete('from');
+        url.searchParams.delete('to');
+        iframe.src = url.toString();
+    }
+
+    document.getElementById('historyDropdown').style.display = 'none';
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
     // Remove any stale iframe
@@ -335,4 +383,21 @@ window.addEventListener('load', () => {
 
     // Socket.IO is loaded from CDN in the HTML <head>; connect immediately
     connectToBackend();
+
+    // Wire history button toggle
+    document.getElementById('historyBtn').addEventListener('click', () => {
+        const dd = document.getElementById('historyDropdown');
+        dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+    });
+
+    document.getElementById('applyRange').addEventListener('click', applyHistoryRange);
+    document.getElementById('goLive').addEventListener('click', goLive);
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', e => {
+        const wrap = document.getElementById('historyControl');
+        if (wrap && !wrap.contains(e.target)) {
+            document.getElementById('historyDropdown').style.display = 'none';
+        }
+    });
 });

@@ -99,8 +99,11 @@ async function initDB() {
                 rms_v REAL, rms_l REAL, sd_v REAL, sd_l REAL,
                 p2p_v REAL, p2p_l REAL,
                 x REAL, y REAL, z REAL,
-                fs REAL, window_ms REAL, distance_m REAL, p_class TEXT
+                fs REAL, window_ms REAL, distance_m REAL, p_class TEXT,
+                lat REAL, lng REAL
             );
+            ALTER TABLE accelerometer_events ADD COLUMN IF NOT EXISTS lat REAL;
+            ALTER TABLE accelerometer_events ADD COLUMN IF NOT EXISTS lng REAL;
             CREATE TABLE IF NOT EXISTS monitoring_data (
                 id        SERIAL PRIMARY KEY,
                 timestamp TIMESTAMPTZ NOT NULL,
@@ -151,7 +154,8 @@ function normImpact(r) {
         p2pV:  r.p2p_v,  p2pL:  r.p2p_l,
         x: r.x, y: r.y, z: r.z,
         fs: r.fs, window_ms: r.window_ms,
-        distance_m: r.distance_m, p_class: r.p_class
+        distance_m: r.distance_m, p_class: r.p_class,
+        lat: r.lat || null, lng: r.lng || null
     };
 }
 function normMonitoring(r) {
@@ -469,17 +473,26 @@ app.get('/api/history/sensor', async (req, res) => {
 
 app.get('/api/impacts', async (req, res) => {
     try {
-        const hours = parseInt(req.query.hours) || 0;
+        const { from, to, hours } = req.query;
+
+        // Build WHERE clause — prefer explicit from/to, fall back to hours
+        let where = '', params = [];
+        if (from && to) {
+            where = 'WHERE timestamp >= $1 AND timestamp <= $2';
+            params = [new Date(from).toISOString(), new Date(to).toISOString()];
+        } else if (from) {
+            where = 'WHERE timestamp >= $1';
+            params = [new Date(from).toISOString()];
+        } else if (parseInt(hours) > 0) {
+            where = 'WHERE timestamp >= $1';
+            params = [new Date(Date.now() - parseInt(hours) * 3600000).toISOString()];
+        }
 
         if (pgReady) {
-            const params = hours > 0
-                ? [new Date(Date.now() - hours * 3600000).toISOString()]
-                : [];
-            const where = hours > 0 ? 'WHERE timestamp >= $1' : '';
             const r = await pool.query(`
                 SELECT * FROM accelerometer_events
                 ${where}
-                ORDER BY timestamp DESC LIMIT 1000
+                ORDER BY timestamp DESC LIMIT 2000
             `, params);
             if (r.rows.length) return res.json(r.rows.map(normImpact));
         }
@@ -488,12 +501,14 @@ app.get('/api/impacts', async (req, res) => {
     }
 
     // Fallback to JSON log
-    const fallback = [...peaksLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    if (parseInt(req.query.hours) > 0) {
-        const cutoff = new Date(Date.now() - parseInt(req.query.hours) * 3600000).toISOString();
-        return res.json(fallback.filter(p => p.timestamp >= cutoff).slice(0, 1000));
+    let fallback = [...peaksLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    if (from) fallback = fallback.filter(p => p.timestamp >= new Date(from).toISOString());
+    if (to)   fallback = fallback.filter(p => p.timestamp <= new Date(to).toISOString());
+    else if (parseInt(hours) > 0) {
+        const cutoff = new Date(Date.now() - parseInt(hours) * 3600000).toISOString();
+        fallback = fallback.filter(p => p.timestamp >= cutoff);
     }
-    res.json(fallback.slice(0, 1000));
+    res.json(fallback.slice(0, 2000));
 });
 
 app.get('/api/historical/graph/:hours', async (req, res) => {
@@ -1020,8 +1035,8 @@ mqttClient.on('message', async (topic, message) => {
         }
 
         // ── GPS — detect by message content (may be embedded in sensor message) ──
-        // Format: [GPS] T-13:13:47 D-27-03-2026 LAT:28584835N LON:77315948E SPD:25cm/s
-        if (msgStr.includes('[GPS]')) {
+        // Format: GPS:T-13:13:47 D-27-03-2026 LAT:28584835N LON:77315948E SPD:25cm/s
+        if (msgStr.includes('[GPS]') || msgStr.includes('GPS:')) {
             const latM  = msgStr.match(/LAT:(\d+)([NS])/i);
             const lonM  = msgStr.match(/LON:(\d+)([EW])/i);
             const spdM  = msgStr.match(/SPD:(\d+(?:\.\d+)?)cm\/s/i);
@@ -1141,15 +1156,19 @@ mqttClient.on('message', async (topic, message) => {
 
             // Save to PostgreSQL
             if (pgReady) {
+                const hasGpsFix = lastGpsCoord && lastGpsCoord.lat && lastGpsCoord.lng;
                 pool.query(
                     `INSERT INTO accelerometer_events
                      (timestamp, sensor, severity, peak_g, g_force,
                       rms_v, rms_l, sd_v, sd_l, p2p_v, p2p_l,
-                      x, y, z, fs, window_ms, distance_m, p_class)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+                      x, y, z, fs, window_ms, distance_m, p_class,
+                      lat, lng)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
                     [timestamp, sensorSide, impact.severity, impact.peak_g, gForce,
                      rmsV, rmsL, sdV, sdL, p2pV, p2pL,
-                     x, y, z, fs, win, totalDistanceM, impact.p_class]
+                     x, y, z, fs, win, totalDistanceM, impact.p_class,
+                     hasGpsFix ? lastGpsCoord.lat : null,
+                     hasGpsFix ? lastGpsCoord.lng : null]
                 ).catch(e => console.error('accelerometerEvents insert:', e.message));
             }
 
@@ -1268,7 +1287,8 @@ app.get('/api/impacts/export/csv', async (req, res) => {
     const headers = [
         'timestamp', 'sensor', 'severity', 'p_class',
         'peak_g', 'gForce', 'rmsV', 'rmsL', 'sdV', 'sdL', 'p2pV', 'p2pL',
-        'x', 'y', 'z', 'fs', 'window_ms', 'distance_m'
+        'x', 'y', 'z', 'fs', 'window_ms', 'distance_m',
+        'lat', 'lng'
     ];
 
     const fmt = v => (v == null || v === undefined) ? '' : String(v);
@@ -1291,7 +1311,9 @@ app.get('/api/impacts/export/csv', async (req, res) => {
         fmt(d.z         != null ? (+d.z).toFixed(3)       : ''),
         fmt(d.fs        != null ? d.fs                     : ''),
         fmt(d.window_ms != null ? d.window_ms              : ''),
-        fmt(d.distance_m != null ? d.distance_m            : '0')
+        fmt(d.distance_m != null ? d.distance_m            : '0'),
+        fmt(d.lat       != null ? (+d.lat).toFixed(6)      : ''),
+        fmt(d.lng       != null ? (+d.lng).toFixed(6)      : '')
     ].join(','));
 
     const csv = [headers.join(','), ...rows].join('\n');
