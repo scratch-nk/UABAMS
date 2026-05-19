@@ -50,6 +50,8 @@
 #include "accelerometer_health.h"
 #include "ethernet_health.h"
 #include <sdio.h>
+#include "gps.h"
+#include "gps_health.h"
 
 #include <math.h>
 #include <string.h>
@@ -103,6 +105,7 @@ volatile uint8_t g_eth_ok = 0;
 
 // RTOS handles 
 static QueueHandle_t     xAccelQueue;   // WindowStats_t, depth 4            
+static QueueHandle_t     gpsQueue;      // GPS byte queue
 static SemaphoreHandle_t xSPI2Mutex;    // guards W5500 SPI2 bus             
 static SemaphoreHandle_t xSPI1Mutex;    // guards ADXL345 SPI1, shared with HealthTask for periodic ID reads  */
 
@@ -468,8 +471,57 @@ static void vLogTask(void *pvParam)
             usart_debug("TCP_NOT _Connected ----------------------------------\r\n");
         }
 
+        // -- GPS Data Output -
+        gps_data_t current_gps;
+        gps_get_copy(&current_gps);
+        if (current_gps.valid) {
+            snprintf(tcp_buf, sizeof(tcp_buf),
+                "GPS:T-%02d:%02d:%02d D-%02d-%02d-%04d LAT:%ld%c LON:%ld%c SPD:%lucm/s\r\n",
+                current_gps.hour, current_gps.minute, current_gps.second,
+                current_gps.day, current_gps.month, current_gps.year,
+                (long)current_gps.lat_i, current_gps.ns,
+                (long)current_gps.lon_i, current_gps.ew,
+                (unsigned long)current_gps.speed_cms);
+            usart_debug(tcp_buf);
+            if (g_eth_ok) UBMS_Send_TCP(tcp_buf);
+        } else {
+            usart_debug("GPS: NO FIX\r\n");
+            if (g_eth_ok) UBMS_Send_TCP("GPS: NO FIX\r\n");
+        }
+
         xSemaphoreGive(xSPI2Mutex);
     }
+}
+
+// GPS Task
+void vGPSTask(void *pvParam)
+{
+    (void)pvParam;
+    uint16_t  ch;
+    usart_debug("[GPSTask] Background parser started\r\n");
+
+    for (;;)
+    {
+        // Block indefinitely waiting for a byte from the USART6 ISR.
+        if (xQueueReceive(gpsQueue, &ch, portMAX_DELAY) == pdTRUE)
+        {
+            gps_feed((char)ch);
+        }
+    }
+}
+
+// -- USART6 Interrupt Handler for GPS 
+void USART6_IRQHandler(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    if (USART6->SR & USART_SR_RXNE)
+    {
+        uint8_t ch = USART6->DR;
+        xQueueSendFromISR(gpsQueue, &ch, &xHigherPriorityTaskWoken);
+    }
+
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 //  HealthTask 
@@ -600,7 +652,7 @@ static void vBootTask(void *pvParam)
 
 int main(void)
 {
-    /* PLL -> 96 MHz. Must be first -- all peripheral baud/timing depends on it */
+    // PLL -> 96 MHz. Must be first -- all peripheral baud/timing depends on it 
     SystemClock_Config();
     USART2_Init();
     int16_t ax, ay, az;
@@ -706,9 +758,21 @@ int main(void)
      * Stack 256 words = 1024 B -- only calls driver reads + usart_debug.    */
     xTaskCreate(vHealthTask, "Health",  768, NULL, 1, NULL);
 
+    /* GPS initialization */
+    gpsQueue = xQueueCreate(512, sizeof(uint8_t));
+    gps_usart6_init();
+    gps_rtc_init();
+    gps_health_check();
+    xTaskCreate(vGPSTask, "GPS", 512, NULL, 3, NULL);
 
     usart_debug("Starting FreeRTOS scheduler...\r\n");
     xSchedulerStarted = 1;   /* allow SysTick_Handler to call xPortSysTickHandler */
+
+    /* Enable GPS interrupt ONLY now (safe for FreeRTOS) */
+    USART6->CR1 |= USART_CR1_RXNEIE;
+    NVIC_SetPriority(USART6_IRQn, 6);   /* priority >= 5 */
+    NVIC_EnableIRQ(USART6_IRQn);
+
     vTaskStartScheduler();   /* never returns if heap is sufficient */
 
     usart_debug("FATAL: scheduler returned\r\n");

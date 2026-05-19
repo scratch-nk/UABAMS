@@ -25,12 +25,14 @@ SRC = \
     i2c.c \
     spi.c \
     gps.c \
+    gpsAcc.c \
     adxl345.c
 
 # ── Local common sources ────────────────────
 LOCAL_CSRC = \
     $(PROJECT_ROOT)/src/common/clock_config.c \
-    $(PROJECT_ROOT)/src/common/led_debug.c
+    $(PROJECT_ROOT)/src/common/led_debug.c \
+    $(PROJECT_ROOT)/src/common/gps_health.c
 
 OBJDIR          = obj
 FREERTOS_OBJDIR = freertos_obj
@@ -69,6 +71,9 @@ $(OBJDIR)/clock_config.o: $(PROJECT_ROOT)/src/common/clock_config.c | $(OBJDIR)
 	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/led_debug.o: $(PROJECT_ROOT)/src/common/led_debug.c | $(OBJDIR)
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/gps_health.o: $(PROJECT_ROOT)/src/common/gps_health.c | $(OBJDIR)
 	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(DELAY_OBJ): $(PROJECT_ROOT)/src/common/delay.c | $(OBJDIR)
