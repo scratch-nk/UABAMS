@@ -288,6 +288,16 @@ function connectToBackend() {
 
     socket.on('gps-update',  data   => updateGPSDisplay(data));
     socket.on('new-impact',  impact => addImpactAlert(impact));
+
+    socket.on('display-reset', () => {
+        currentDistanceM = 0;
+        const counter = document.getElementById('counter');
+        if (counter) counter.textContent = '0';
+        const alertsList = document.querySelector('.alerts-mini-list');
+        if (alertsList) alertsList.innerHTML = '';
+        _notifAlerts.length = 0;
+        _notifRender();
+    });
 }
 
 // ── Load initial alerts from REST ─────────────────────────────────────────
@@ -332,16 +342,19 @@ window.HISTORY_FROM = null;
 window.HISTORY_TO   = null;
 
 function applyHistoryRange() {
-    const from = document.getElementById('rangeFrom').value;
-    const to   = document.getElementById('rangeTo').value;
-    if (!from || !to) { alert('Please select both From and To dates.'); return; }
+    const dateVal = document.getElementById('rangeDate').value;
+    if (!dateVal) { alert('Please select a date.'); return; }
 
-    window.HISTORY_FROM = new Date(from).toISOString();
-    window.HISTORY_TO   = new Date(to).toISOString();
+    const start = new Date(dateVal);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(dateVal);
+    end.setHours(23, 59, 59, 999);
 
-    // Update button label
+    window.HISTORY_FROM = start.toISOString();
+    window.HISTORY_TO   = end.toISOString();
+
     const label = document.getElementById('historyBtnLabel');
-    if (label) label.textContent = new Date(from).toLocaleDateString('en-IN') + ' – ' + new Date(to).toLocaleDateString('en-IN');
+    if (label) label.textContent = start.toLocaleDateString('en-IN');
 
     // Reload the current iframe with range params
     const iframe = document.getElementById('content-frame');

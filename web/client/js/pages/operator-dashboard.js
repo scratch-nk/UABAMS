@@ -99,7 +99,7 @@ $('refreshBtn')?.addEventListener('click', () => {
 });
 
 // Reset button
-$('resetBtn')?.addEventListener('click', () => {
+$('resetSessionBtn')?.addEventListener('click', () => {
     if (!confirm('Reset all display counters to zero?\n\nThis only clears the screen — all database records are kept.\nThe counters will repopulate when the next impact arrives.')) return;
     ['impactsToday','highSeverity','maxPeak','lastPeak','totalDistance','distanceKm'].forEach(id => {
         const el = $(id);
@@ -530,7 +530,7 @@ socket.on('stats-update', (stats) => {
         finally { confirmBtn.textContent = 'Reset'; confirmBtn.disabled = false; }
     });
 
-    const resetBtn = document.getElementById('resetBtn');
+    const resetBtn = document.getElementById('resetSessionBtn');
     if (resetBtn) {
         const newBtn = resetBtn.cloneNode(true);
         resetBtn.parentNode.replaceChild(newBtn, resetBtn);
