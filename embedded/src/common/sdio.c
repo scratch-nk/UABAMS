@@ -12,6 +12,7 @@
 
 /* Global RCA — set after card init, used by diskio.c */
 uint16_t g_sd_rca = 0;
+uint8_t  g_is_sdhc = 0;
 
 /* -----------------------------------------------------------------------
  * SDIO_Init
@@ -69,6 +70,18 @@ void SDIO_Init(void)
     for (volatile int i = 0; i < 10000; i++);
 
     usart_debug("SDIO INIT DONE\r\n");
+}
+
+/* -----------------------------------------------------------------------
+ * SDIO_Clock_HighSpeed
+ * Increases SDIO_CK from 400kHz to ~24MHz (48MHz / (0+2)).
+ * ----------------------------------------------------------------------- */
+void SDIO_Clock_HighSpeed(void)
+{
+    /* CLKDIV=2 -> 48MHz/(2+2)=12MHz, CLKEN=1 (Safer for 1-bit/wires) */
+    SDIO->CLKCR = (2U << 0) | (1U << 8);
+    for (volatile int i = 0; i < 1000; i++);
+    usart_debug("SDIO CLOCK: HIGH SPEED (12MHz)\r\n");
 }
 
 /* -----------------------------------------------------------------------
@@ -270,6 +283,14 @@ int SDIO_CardInit(void)
         if (ocr & (1U << 31))   /* Card power-up status bit */
         {
             usart_debug("CARD READY\r\n");
+            /* Bit 30: Card Capacity Status (CCS). 1 = SDHC/SDXC, 0 = SDSC */
+            if (ocr & (1U << 30)) {
+                g_is_sdhc = 1;
+                usart_debug("TYPE: SDHC/SDXC (Block Addressing)\r\n");
+            } else {
+                g_is_sdhc = 0;
+                usart_debug("TYPE: SDSC (Byte Addressing)\r\n");
+            }
             break;
         }
 
@@ -280,6 +301,8 @@ int SDIO_CardInit(void)
             return 0;
         }
     }
+
+    SDIO_Clock_HighSpeed();
 
     usart_debug("--- SD INIT DONE ---\r\n");
     return 1;
@@ -335,6 +358,13 @@ void SDIO_FullInit_Debug(void)
         if (ocr & (1U << 31))
         {
             usart_debug("CARD READY\r\n");
+            if (ocr & (1U << 30)) {
+                g_is_sdhc = 1;
+                usart_debug("TYPE: SDHC/SDXC\r\n");
+            } else {
+                g_is_sdhc = 0;
+                usart_debug("TYPE: SDSC\r\n");
+            }
             break;
         }
 
@@ -345,6 +375,8 @@ void SDIO_FullInit_Debug(void)
             return;
         }
     }
+
+    SDIO_Clock_HighSpeed();
 
     usart_debug("==== SD INIT DONE ====\r\n");
 }
@@ -473,13 +505,14 @@ int SD_SelectCard(uint16_t rca)
 }
 
 /* -----------------------------------------------------------------------
- * SD_WriteBlock — CMD24: write 512-byte block at given block address
+ * SD_WriteBlock — CMD24: write 512-byte block at given sector
  * ----------------------------------------------------------------------- */
-int SD_WriteBlock(uint32_t block_addr, const uint8_t *buf512, uint16_t rca)
+int SD_WriteBlock(uint32_t sector, const uint8_t *buf512, uint16_t rca)
 {
     char msg[64];
+    uint32_t addr = g_is_sdhc ? sector : (sector * 512U);
 
-    /* Set block length to 512 (CMD16) */
+    /* Set block length to 512 (CMD16) — technically optional for SDHC but safe */
     SDIO->ICR = 0xFFFFFFFF;
     SDIO->ARG = 512;
     SDIO->CMD = (16U & 0x3F) | (1U << 10) | (1U << 6);
@@ -490,7 +523,7 @@ int SD_WriteBlock(uint32_t block_addr, const uint8_t *buf512, uint16_t rca)
 
     /* CMD24: WRITE_BLOCK — send command first, get R1 response */
     SDIO->ICR = 0xFFFFFFFF;
-    SDIO->ARG = block_addr;
+    SDIO->ARG = addr;
     SDIO->CMD = (24U & 0x3F) | (1U << 10) | (1U << 6);
     timeout = 2000000;
     while (!(SDIO->STA & (1U<<6)) && !(SDIO->STA & (1U<<1)) && !(SDIO->STA & (1U<<2)))
@@ -565,11 +598,12 @@ int SD_WriteBlock(uint32_t block_addr, const uint8_t *buf512, uint16_t rca)
 }
 
 /* -----------------------------------------------------------------------
- * SD_ReadBlock — CMD17: read 512-byte block at given block address
+ * SD_ReadBlock — CMD17: read 512-byte block at given sector
  * ----------------------------------------------------------------------- */
-int SD_ReadBlock(uint32_t block_addr, uint8_t *buf512)
+int SD_ReadBlock(uint32_t sector, uint8_t *buf512)
 {
     char msg[64];
+    uint32_t addr = g_is_sdhc ? sector : (sector * 512U);
 
     /* CMD16: SET_BLOCKLEN = 512 */
     SDIO->ICR = 0xFFFFFFFF;
@@ -589,7 +623,7 @@ int SD_ReadBlock(uint32_t block_addr, uint8_t *buf512)
     SDIO->DCTRL  = (9U << 4) | (1U << 1) | (1U << 0);
 
     /* CMD17: READ_SINGLE_BLOCK */
-    SDIO->ARG = block_addr;
+    SDIO->ARG = addr;
     SDIO->CMD = (17U & 0x3F) | (1U << 10) | (1U << 6);
     timeout = 2000000;
     while (!(SDIO->STA & (1U<<6)) && !(SDIO->STA & (1U<<1)) && !(SDIO->STA & (1U<<2)))
@@ -651,13 +685,13 @@ void SD_ReadWriteTest(uint16_t rca)
         wbuf[i] = (uint8_t)(i & 0xFF);
 
     usart_debug("Writing block 100...\r\n");
-    if (!SD_WriteBlock(100U * 512U, wbuf, rca)) { usart_debug("WRITE FAILED\r\n"); return; }
+    if (!SD_WriteBlock(100U, wbuf, rca)) { usart_debug("WRITE FAILED\r\n"); return; }
 
     /* Brief delay before read */
     for (volatile int d = 0; d < 100000; d++);
 
     usart_debug("Reading block 100...\r\n");
-    if (!SD_ReadBlock(100U * 512U, rbuf)) { usart_debug("READ FAILED\r\n"); return; }
+    if (!SD_ReadBlock(100U, rbuf)) { usart_debug("READ FAILED\r\n"); return; }
 
     /* Verify */
     int errors = 0;
@@ -776,11 +810,11 @@ void SD_DumpBMP_UART(uint32_t block_start, uint32_t total_bytes)
     usart_debug("\r\nBMP_START\r\n");
 
     uint32_t bytes_sent = 0;
-    uint32_t addr       = block_start;
+    uint32_t current_sector = block_start;
 
     while (bytes_sent < total_bytes)
     {
-        if (!SD_ReadBlock(addr, sector))
+        if (!SD_ReadBlock(current_sector, sector))
         {
             usart_debug("READ_ERROR\r\n");
             return;
@@ -806,7 +840,7 @@ void SD_DumpBMP_UART(uint32_t block_start, uint32_t total_bytes)
         }
 
         bytes_sent += chunk;
-        addr       += 512;
+        current_sector++;
     }
 
     usart_debug("BMP_END\r\n");

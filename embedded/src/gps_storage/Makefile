@@ -24,7 +24,6 @@ SRC = \
     spi.c \
     gps.c \
     sd.c \
-    gps_health.c \
     main.c
 
 # ── Local common sources (not in COMMON_OBJ) ──────────────────────────────────
@@ -32,7 +31,8 @@ SRC = \
 # led_debug.c     — PWM LED, used for status indication
 LOCAL_CSRC = \
     $(PROJECT_ROOT)/src/common/led_debug.c \
-    $(PROJECT_ROOT)/src/common/clock_config.c
+    $(PROJECT_ROOT)/src/common/clock_config.c \
+    $(PROJECT_ROOT)/src/common/gps_health.c
 
 OBJDIR          = obj
 FREERTOS_OBJDIR = freertos_obj
@@ -75,6 +75,9 @@ $(OBJDIR)/clock_config.o: $(PROJECT_ROOT)/src/common/clock_config.c | $(OBJDIR)
 	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 $(OBJDIR)/led_debug.o: $(PROJECT_ROOT)/src/common/led_debug.c | $(OBJDIR)
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/gps_health.o: $(PROJECT_ROOT)/src/common/gps_health.c | $(OBJDIR)
 	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
 # delay.c — compiled with USE_FREERTOS_SYSTICK to suppress its SysTick_Handler

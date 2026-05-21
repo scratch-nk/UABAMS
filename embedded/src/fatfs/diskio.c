@@ -5,15 +5,14 @@
  * defined in main.c.
  *
  * FatFs uses sector numbers (not byte addresses).
- * Our SD_ReadBlock/SD_WriteBlock take byte addresses (sector * 512).
  */
 
 #include "diskio.h"
 #include "ffconf.h"
 
-/* Declared in main.c */
-extern int      SD_WriteBlock(unsigned int byte_addr, const unsigned char *buf512, unsigned short rca);
-extern int      SD_ReadBlock (unsigned int byte_addr, unsigned char *buf512);
+/* Declared in sdio.c */
+extern int      SD_WriteBlock(unsigned int sector, const unsigned char *buf512, unsigned short rca);
+extern int      SD_ReadBlock (unsigned int sector, unsigned char *buf512);
 extern unsigned short g_sd_rca;   /* global RCA set after card init */
 
 /* -----------------------------------------------------------------------
@@ -43,8 +42,7 @@ DRESULT disk_read(BYTE pdrv, BYTE *buff, DWORD sector, UINT count)
     if (pdrv != 0) return RES_PARERR;
     for (UINT i = 0; i < count; i++)
     {
-        unsigned int byte_addr = (unsigned int)((sector + i) * 512UL);
-        if (!SD_ReadBlock(byte_addr, buff + i * 512))
+        if (!SD_ReadBlock(sector + i, buff + i * 512))
             return RES_ERROR;
     }
     return RES_OK;
@@ -58,8 +56,7 @@ DRESULT disk_write(BYTE pdrv, const BYTE *buff, DWORD sector, UINT count)
     if (pdrv != 0) return RES_PARERR;
     for (UINT i = 0; i < count; i++)
     {
-        unsigned int byte_addr = (unsigned int)((sector + i) * 512UL);
-        if (!SD_WriteBlock(byte_addr, buff + i * 512, g_sd_rca))
+        if (!SD_WriteBlock(sector + i, buff + i * 512, g_sd_rca))
             return RES_ERROR;
     }
     return RES_OK;

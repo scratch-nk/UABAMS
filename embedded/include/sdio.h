@@ -4,10 +4,12 @@
 #include <stdint.h>
 
 extern uint16_t g_sd_rca;
+extern uint8_t  g_is_sdhc;
 
 /* Init */
 void SystemClock_Config(void);
 void SDIO_Init(void);
+void SDIO_Clock_HighSpeed(void);
 
 /* Debug */
 void SDIO_DebugFull(void);
