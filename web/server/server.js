@@ -494,13 +494,16 @@ app.get('/api/impacts', async (req, res) => {
                 ${where}
                 ORDER BY timestamp DESC LIMIT 2000
             `, params);
-            if (r.rows.length) return res.json(r.rows.map(normImpact));
+            // Always return DB result when a date filter was applied — even if empty.
+            // Without this guard, 0 DB rows would fall through to the fallback and
+            // return unfiltered data.
+            if (where || r.rows.length) return res.json(r.rows.map(normImpact));
         }
     } catch (e) {
         console.error('/api/impacts error:', e.message);
     }
 
-    // Fallback to JSON log
+    // Fallback to JSON log (only reached when DB is unavailable and no date filter)
     let fallback = [...peaksLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     if (from) fallback = fallback.filter(p => p.timestamp >= new Date(from).toISOString());
     if (to)   fallback = fallback.filter(p => p.timestamp <= new Date(to).toISOString());
@@ -1254,9 +1257,21 @@ app.post('/api/reset', async (req, res) => {
 // Returns a properly formatted CSV matching the impact_report.csv structure
 // Columns: timestamp,sensor,severity,peak_g,gForce,rmsV,rmsL,sdV,sdL,p2pV,p2pL,x,y,z,fs,window_ms
 app.get('/api/impacts/export/csv', async (req, res) => {
-    const hours  = parseInt(req.query.hours) || 24;
-    const dbNow  = await getDBNow();
-    const cutoff = new Date(dbNow.getTime() - hours * 3600000).toISOString();
+    const { from, to, hours } = req.query;
+
+    let where = '', params = [], label = '';
+    if (from && to) {
+        where  = 'WHERE timestamp >= $1 AND timestamp <= $2';
+        params = [new Date(from).toISOString(), new Date(to).toISOString()];
+        label  = new Date(from).toISOString().slice(0, 10);
+    } else {
+        const h      = parseInt(hours) || 24;
+        const dbNow  = await getDBNow();
+        const cutoff = new Date(dbNow.getTime() - h * 3600000).toISOString();
+        where  = 'WHERE timestamp >= $1';
+        params = [cutoff];
+        label  = `last_${h}h`;
+    }
 
     let docs = [];
 
@@ -1265,9 +1280,9 @@ app.get('/api/impacts/export/csv', async (req, res) => {
         try {
             const r = await pool.query(`
                 SELECT * FROM accelerometer_events
-                WHERE timestamp >= $1
+                ${where}
                 ORDER BY timestamp DESC
-            `, [cutoff]);
+            `, params);
             docs = r.rows.map(normImpact);
         } catch (e) {
             console.error('[csv] PG read failed, using JSON fallback:', e.message);
@@ -1275,13 +1290,13 @@ app.get('/api/impacts/export/csv', async (req, res) => {
     }
 
     // Fallback to peaks_log.json
-    if (!docs.length) {
+    if (!docs.length && !where.includes('$2')) {
         docs = peaksLog
-            .filter(p => p.timestamp >= cutoff)
+            .filter(p => p.timestamp >= params[0])
             .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     }
 
-    console.log(`[csv] Exporting ${docs.length} records for last ${hours}h`);
+    console.log(`[csv] Exporting ${docs.length} records (${label})`);
 
     // Build CSV
     const headers = [
@@ -1318,9 +1333,7 @@ app.get('/api/impacts/export/csv', async (req, res) => {
 
     const csv = [headers.join(','), ...rows].join('\n');
 
-    // Filename: impact_report_YYYY-MM-DD.csv
-    const dateStr = new Date().toISOString().slice(0, 10);
-    const filename = `impact_report_${dateStr}.csv`;
+    const filename = `impact_report_${label}.csv`;
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

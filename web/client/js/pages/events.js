@@ -111,6 +111,16 @@ async function fetchEvents() {
         if (HISTORY_FROM) url.searchParams.set('from', HISTORY_FROM);
         if (HISTORY_TO)   url.searchParams.set('to',   HISTORY_TO);
 
+        // Date filter from the inline picker overrides history params
+        const dateInput = document.getElementById('filterDate');
+        if (dateInput && dateInput.value) {
+            const d = new Date(dateInput.value);
+            const start = new Date(d); start.setHours(0, 0, 0, 0);
+            const end   = new Date(d); end.setHours(23, 59, 59, 999);
+            url.searchParams.set('from', start.toISOString());
+            url.searchParams.set('to',   end.toISOString());
+        }
+
         const data       = await fetch(url).then(r => r.json());
         const normalised = data.map(normalise);
 
@@ -188,9 +198,41 @@ document.getElementById('severityFilter').addEventListener('change', e => {
     renderAll();
 });
 
+document.getElementById('filterDate')?.addEventListener('change', () => {
+    allEvents  = [];
+    lastIsoTime = '';
+    fetchEvents();
+});
+
 // ── Export ────────────────────────────────────────────────────────────────
-function exportEvents() { window.open(`${API}/api/impacts/export/csv`, '_blank'); }
+function exportEvents() {
+    const dateInput = document.getElementById('filterDate');
+    const url = new URL(`${API}/api/impacts/export/csv`);
+
+    if (dateInput && dateInput.value) {
+        const d     = new Date(dateInput.value);
+        const start = new Date(d); start.setHours(0, 0, 0, 0);
+        const end   = new Date(d); end.setHours(23, 59, 59, 999);
+        url.searchParams.set('from', start.toISOString());
+        url.searchParams.set('to',   end.toISOString());
+    } else if (HISTORY_FROM && HISTORY_TO) {
+        url.searchParams.set('from', HISTORY_FROM);
+        url.searchParams.set('to',   HISTORY_TO);
+    }
+
+    window.open(url.toString(), '_blank');
+}
 window.exportEvents = exportEvents;
+
+// ── Socket — listen for display-reset from server ────────────────────────
+if (!IS_HISTORY && typeof io !== 'undefined') {
+    const _evSocket = io(API);
+    _evSocket.on('display-reset', () => {
+        allEvents  = [];
+        lastIsoTime = '';
+        renderAll();
+    });
+}
 
 // ── Boot — show Offline immediately, then start polling ───────────────────
 (function init() {
