@@ -5,7 +5,7 @@
 
 
 
-/* ================= GPS DATA STRUCT ================= */
+//GPS DATA STRUCT 
 typedef struct
 {
     uint8_t valid;
@@ -30,7 +30,7 @@ typedef struct
 extern gps_data_t gps_data;
 
 
-/* -------- FUNCTIONS -------- */
+
 void gps_usart6_init(void);
 void gps_poll(void);        /* bare-metal: call in tight loop */
 void gps_feed(char c);      /* FreeRTOS: call with byte from ISR queue */

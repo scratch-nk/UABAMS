@@ -32,4 +32,12 @@ config.local.*
 *.elf
 *.bin
 
-data/
+data / 
+# Python cache
+bridge/__pycache__/
+
+# Test log files
+embedded/18-05-2026.txt
+embedded/18-05-26.txt
+embedded/live_data.txt
+embedded/minicom.cap

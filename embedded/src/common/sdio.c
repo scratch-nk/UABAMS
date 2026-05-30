@@ -10,7 +10,7 @@
 #define NO_RESP    0
 #define SHORT_RESP 1
 
-/* Global RCA — set after card init, used by diskio.c */
+// Global RCA — set after card init, used by diskio.c 
 uint16_t g_sd_rca = 0;
 uint8_t  g_is_sdhc = 0;
 
@@ -769,7 +769,7 @@ void SD_ReadBMP_Verify(uint32_t block_start, const uint8_t *original_pixels)
         usart_debug(msg);
     }
 
-    /* Check first 8 pixel bytes (at offset 66 in the sector) */
+    // Check first 8 pixel bytes (at offset 66 in the sector) 
     int pixel_errors = 0;
     for (int i = 0; i < 8; i++)
         if (sector[66 + i] != original_pixels[i]) pixel_errors++;
@@ -845,4 +845,3 @@ void SD_DumpBMP_UART(uint32_t block_start, uint32_t total_bytes)
 
     usart_debug("BMP_END\r\n");
 }
-

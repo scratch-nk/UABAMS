@@ -8,13 +8,11 @@
 #include "semphr.h"
 
 
-/* ===== GLOBAL GPS DATA DEFINITION ===== */
+
 gps_data_t gps_data = {0};
 static SemaphoreHandle_t gpsMutex = NULL;
 
-/* =========================================================
-   NMEA FIELD EXTRACTION
-   ========================================================= */
+
 
 static void get_nmea_field(const char *line, int field, char *out, int maxlen)
 {

@@ -31,7 +31,7 @@ void SD_ReadWriteTest(uint16_t rca);
 void SD_ImageTest(uint16_t rca);
 void SD_WriteTextFiles(uint16_t rca);
 
-/* FATFS */
+// FATFS 
 void SD_FatFsTest(void);
 
 #endif
