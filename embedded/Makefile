@@ -35,7 +35,8 @@ COMMON_SRC = \
  ethernet_health.c \
  system_stm32f4xx.c \
  startup.s \
- syscalls.c
+ syscalls.c \
+ crc16.c
 
 COMMON_OBJ = $(addprefix $(COMMON_OBJDIR)/,$(COMMON_SRC:.c=.o))
 COMMON_OBJ := $(COMMON_OBJ:.s=.o)
@@ -121,13 +122,13 @@ seriallist:
 	ls /dev/ttyACM*
 
 serialmonitor:
-	minicom -b 115200 -D /dev/ttyACM0
+	minicom -b 460800 -D /dev/ttyACM0
 
 serialmonitor0:
-	minicom -b 115200 -D /dev/ttyACM0
+	minicom -b 460800 -D /dev/ttyACM0
 
 serialmonitor1:
-	minicom -b 115200 -D /dev/ttyACM1
+	minicom -b 460800 -D /dev/ttyACM1
 
 # =======================
 # FLASH

@@ -78,10 +78,10 @@ void SDIO_Init(void)
  * ----------------------------------------------------------------------- */
 void SDIO_Clock_HighSpeed(void)
 {
-    /* CLKDIV=2 -> 48MHz/(2+2)=12MHz, CLKEN=1 (Safer for 1-bit/wires) */
-    SDIO->CLKCR = (2U << 0) | (1U << 8);
+    /* CLKDIV=4 -> 48MHz/(4+2)=8MHz (More stable for polled I/O with interrupts) */
+    SDIO->CLKCR = (4U << 0) | (1U << 8);
     for (volatile int i = 0; i < 1000; i++);
-    usart_debug("SDIO CLOCK: HIGH SPEED (12MHz)\r\n");
+    usart_debug("SDIO CLOCK: HIGH SPEED (8MHz)\r\n");
 }
 
 /* -----------------------------------------------------------------------
@@ -533,51 +533,70 @@ int SD_WriteBlock(uint32_t sector, const uint8_t *buf512, uint16_t rca)
     SDIO->DTIMER = 0xFFFFFFFF;
     SDIO->DLEN   = 512;
     SDIO->ICR    = 0xFFFFFFFF;
+    /* DBLOCKSIZE=9, DTEN=1 */
     SDIO->DCTRL  = (9U << 4) | (0U << 1) | (1U << 0);
     for (volatile int i = 0; i < 100; i++);
 
     const uint32_t *src = (const uint32_t *)buf512;
     int words_written = 0;
+    int success = 1;
 
     while (words_written < 128)
     {
         timeout = 2000000;
+        /* Wait for TXFIFOHE (bit 14) */
         while (!(SDIO->STA & (1U << 14)))
         {
             if (SDIO->STA & ((1U<<3)|(1U<<4)|(1U<<5))) {
                 sprintf(msg, "WRITE ERR w=%d STA=0x%08lX\r\n", words_written, SDIO->STA);
                 usart_debug(msg);
-                return 0;
+                success = 0;
+                break;
             }
             if (--timeout == 0) {
                 sprintf(msg, "TXFIFOHE STUCK w=%d STA=0x%08lX\r\n", words_written, SDIO->STA);
                 usart_debug(msg);
-                return 0;
+                success = 0;
+                break;
             }
         }
+        if (!success) break;
+
+        /* Write a burst of 8 words */
         int burst = (128 - words_written < 8) ? (128 - words_written) : 8;
         for (int j = 0; j < burst; j++)
             SDIO->FIFO = src[words_written++];
     }
-    timeout = 5000000;
-    while (!(SDIO->STA & (1U << 8)))
-    {
-        if (SDIO->STA & ((1U<<3)|(1U<<4)|(1U<<5))) {
-            sprintf(msg, "WRITE ERR STA=0x%08lX\r\n", SDIO->STA);
-            usart_debug(msg);
-            return 0;
-        }
-        if (--timeout == 0) {
-            usart_debug("WRITE TIMEOUT\r\n");
-            return 0;
+
+    if (success) {
+        timeout = 5000000;
+        while (!(SDIO->STA & (1U << 8))) // DATAEND
+        {
+            if (SDIO->STA & ((1U<<3)|(1U<<4)|(1U<<5))) {
+                sprintf(msg, "WRITE DATAEND ERR STA=0x%08lX\r\n", SDIO->STA);
+                usart_debug(msg);
+                success = 0;
+                break;
+            }
+            if (--timeout == 0) {
+                usart_debug("WRITE TIMEOUT\r\n");
+                success = 0;
+                break;
+            }
         }
     }
 
-    SDIO->DCTRL = 0;      /* Release SDIO data path */
+    SDIO->DCTRL = 0;      /* Stop data path */
     SDIO->ICR   = 0xFFFFFFFF;
 
-    /* Poll CMD13 until card exits programming state (bit 8 = READY_FOR_DATA,
-     * bits [12:9] = TRAN state = 0b0100 = 4) */
+    if (!success) {
+        /* Send CMD12 to stop card if write failed */
+        SDIO->ARG = 0;
+        SDIO->CMD = (12U & 0x3F) | (1U << 10) | (1U << 6);
+        return 0;
+    }
+
+    /* Poll CMD13 until card exits programming state */
     timeout = 5000000;
     while (1)
     {
@@ -588,7 +607,6 @@ int SD_WriteBlock(uint32_t sector, const uint8_t *buf512, uint16_t rca)
         while (!(SDIO->STA & (1U<<6)) && !(SDIO->STA & (1U<<1)) && !(SDIO->STA & (1U<<2)))
             if (--t2 == 0) break;
         uint32_t r1 = SDIO->RESP1;
-        /* READY_FOR_DATA = bit 8, current state = bits [12:9] */
         if ((r1 & (1U << 8)) && (((r1 >> 9) & 0xF) == 4))
             break;
         if (--timeout == 0) { usart_debug("CARD BUSY TIMEOUT\r\n"); return 0; }
