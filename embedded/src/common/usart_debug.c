@@ -140,7 +140,7 @@ void USART2_Init(void) {
     GPIOA->AFR[0] |= (7U << (2 * 4)) | (7U << (3 * 4));  // AF7 for USART2
 
     // Configure baud rate (compute from current PCLK1)
-    const uint32_t baud = 115200U;
+    const uint32_t baud = 460800; //115200U;
     uint32_t pclk1 = get_pclk1_freq();
     // For oversampling by 16: BRR = PCLK1 / baud
     uint32_t brr = (pclk1 + (baud / 2U)) / baud; // rounded
@@ -152,7 +152,7 @@ void USART2_Init(void) {
 
 // USART2 Debug print function (printf-style)
 void usart_debug(const char* format, ...) {
-    char buffer[256];
+    char buffer[512];
     va_list args;
     va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);
@@ -164,3 +164,6 @@ void usart_debug(const char* format, ...) {
     }
 }
 
+void usart_puts(const char* s) {
+    while (*s) USART2_SendChar(*s++);
+}

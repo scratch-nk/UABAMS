@@ -8,3 +8,10 @@ build/
 CMakeFiles/
 CMakeCache.txt
 node_modules/
+
+web/server/server.py
+18-05-2026.txt
+18-05-26.txt
+live_data.txt
+minicom.cap
+

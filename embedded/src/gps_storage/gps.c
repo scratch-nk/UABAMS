@@ -4,10 +4,13 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include "FreeRTOS.h"
+#include "semphr.h"
 
 
 /* ===== GLOBAL GPS DATA DEFINITION ===== */
 gps_data_t gps_data = {0};
+static SemaphoreHandle_t gpsMutex = NULL;
 
 /* =========================================================
    NMEA FIELD EXTRACTION
@@ -78,6 +81,10 @@ void gps_rtc_init(void)
 
 void gps_usart6_init(void)
 {
+    if (gpsMutex == NULL) {
+        gpsMutex = xSemaphoreCreateMutex();
+    }
+
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
     RCC->APB2ENR |= RCC_APB2ENR_USART6EN;
 
@@ -126,47 +133,62 @@ void gps_feed(char c)
             get_nmea_field(line, 1, utc_time, sizeof(utc_time));
             get_nmea_field(line, 9, date, sizeof(date));   // DDMMYY
 
-            if (status[0] == 'A' && lat[0] && lon[0])
+            if (gpsMutex != NULL && xSemaphoreTake(gpsMutex, pdMS_TO_TICKS(100)) == pdTRUE)
             {
-                gps_data.valid = 1;
-
-                double dlat = nmea_lat_to_decimal(lat);
-                double dlon = nmea_lon_to_decimal(lon);
-
-                gps_data.lat_i = (int32_t)(dlat * 1000000);
-                gps_data.lon_i = (int32_t)(dlon * 1000000);
-                gps_data.ns = ns[0];
-                gps_data.ew = ew[0];
-
-                gps_data.speed_cms = (uint32_t)(atof(speed_knots) * 51.444); // knots→cm/s
-
-                if (strlen(utc_time) >= 6)
+                if (status[0] == 'A' && lat[0] && lon[0])
                 {
-                    gps_data.hour   = (utc_time[0]-'0')*10 + (utc_time[1]-'0');
-                    gps_data.minute = (utc_time[2]-'0')*10 + (utc_time[3]-'0');
-                    gps_data.second = (utc_time[4]-'0')*10 + (utc_time[5]-'0');
+                    gps_data.valid = 1;
 
-                    // UTC → IST
-                    gps_data.minute += 30;
-                    if (gps_data.minute >= 60)
+                    double dlat = nmea_lat_to_decimal(lat);
+                    double dlon = nmea_lon_to_decimal(lon);
+
+                    gps_data.lat_i = (int32_t)(dlat * 1000000);
+                    gps_data.lon_i = (int32_t)(dlon * 1000000);
+                    gps_data.ns = ns[0];
+                    gps_data.ew = ew[0];
+
+                    gps_data.speed_cms = (uint32_t)(atof(speed_knots) * 51.444); // knots→cm/s
+
+                    if (strlen(utc_time) >= 6)
                     {
-                        gps_data.minute -= 60;
-                        gps_data.hour++;
-                    }
-                    gps_data.hour += 5;
-                    if (gps_data.hour >= 24) gps_data.hour -= 24;
-                }
+                        gps_data.hour   = (utc_time[0]-'0')*10 + (utc_time[1]-'0');
+                        gps_data.minute = (utc_time[2]-'0')*10 + (utc_time[3]-'0');
+                        gps_data.second = (utc_time[4]-'0')*10 + (utc_time[5]-'0');
 
-                if (strlen(date) == 6)
-                {
-                    gps_data.day   = (date[0]-'0')*10 + (date[1]-'0');
-                    gps_data.month = (date[2]-'0')*10 + (date[3]-'0');
-                    gps_data.year  = 2000 + (date[4]-'0')*10 + (date[5]-'0');
+                        // UTC → IST
+                        gps_data.minute += 30;
+                        if (gps_data.minute >= 60)
+                        {
+                            gps_data.minute -= 60;
+                            gps_data.hour++;
+                        }
+                        gps_data.hour += 5;
+                        if (gps_data.hour >= 24) gps_data.hour -= 24;
+                    }
+
+                    if (strlen(date) == 6)
+                    {
+                        gps_data.day   = (date[0]-'0')*10 + (date[1]-'0');
+                        gps_data.month = (date[2]-'0')*10 + (date[3]-'0');
+                        gps_data.year  = 2000 + (date[4]-'0')*10 + (date[5]-'0');
+                    }
                 }
+                else
+                {
+                    gps_data.valid = 0;
+                }
+                xSemaphoreGive(gpsMutex);
             }
-            else
+        }
+        else if (strstr(line, "GGA,"))
+        {
+            char sats[4] = {0};
+            get_nmea_field(line, 7, sats, sizeof(sats));
+            
+            if (gpsMutex != NULL && xSemaphoreTake(gpsMutex, pdMS_TO_TICKS(50)) == pdTRUE)
             {
-                gps_data.valid = 0;
+                gps_data.satellites = (uint8_t)atoi(sats);
+                xSemaphoreGive(gpsMutex);
             }
         }
     }
@@ -181,4 +203,13 @@ void gps_poll(void)
 {
     if (USART6->SR & USART_SR_RXNE)
         gps_feed((char)USART6->DR);
+}
+
+void gps_get_copy(gps_data_t *copy)
+{
+    if (gpsMutex != NULL && xSemaphoreTake(gpsMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+    {
+        memcpy(copy, &gps_data, sizeof(gps_data_t));
+        xSemaphoreGive(gpsMutex);
+    }
 }
