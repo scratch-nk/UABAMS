@@ -60,6 +60,41 @@ typedef struct {
     float s2_peak;
 } WindowStats_t;
 
+typedef struct __attribute__((packed)) {
+    uint8_t header;       // 0x01 for S1, 0x02 for S2
+    float ax, ay, az;
+    float rms_v, rms_l;
+    float sd_v, sd_l;
+    float p2p_v, p2p_l;
+    float peak;
+    uint32_t time_ms;
+    int32_t lat_i;
+    int32_t lon_i;
+    uint8_t satellites;
+    uint8_t valid;
+    uint8_t hour, minute, second;
+    uint8_t day, month;
+    uint16_t year;
+    float speed_kmh;
+    uint16_t crc;
+} PacketS1S2_t; // Total: 68 bytes
+
+typedef struct __attribute__((packed)) {
+    uint8_t header;       // 0x03 for EVENT
+    uint32_t time_ms;
+    float s1_peak;
+    float s2_peak;
+    uint16_t crc;
+} PacketEvent_t; // Total: 15 bytes
+
+static void buffer_to_hex(const uint8_t *buf, size_t len, char *out)
+{
+    for (size_t i = 0; i < len; i++) {
+        sprintf(out + (i * 2), "%02x", buf[i]);
+    }
+    out[len * 2] = '\0';
+}
+
 // RTOS handles 
 static QueueHandle_t     xAccelQueue;            
 static QueueHandle_t     gpsQueue;      
@@ -166,15 +201,6 @@ static void vAccelTask(void *pvParam)
     }
 }
 
-static const char* get_range_str(float peak)
-{
-    if (peak < 2.0f) return "NORMAL";
-    if (peak < 4.0f) return "2G";
-    if (peak < 8.0f) return "4G";
-    if (peak < 16.0f) return "8G";
-    return "16G";
-}
-
 // -- LogTask 
 static void vLogTask(void *pvParam)
 {
@@ -210,64 +236,69 @@ static void vLogTask(void *pvParam)
             uint32_t time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             gps_get_copy(&gps_local);
             float speed_kmh = gps_local.speed_cms * 0.036f;
+            char hex_buf[256];
 
             // CFG Line
-            int len = snprintf(line, sizeof(line), "CFG,%d,%d", FS_HZ, WINDOW_MS);
-            uint16_t crc = crc16_ccitt((uint8_t*)line, len);
-            snprintf(line + len, sizeof(line) - len, ",CRC:0x%04X\r\n", crc);
-            
+            snprintf(line, sizeof(line), "STM32 Config: CFG,%d,%d\r\n", FS_HZ, WINDOW_MS);
             usart_puts(line);
-            if (sd_mounted) {
-                res = f_write(&fil, line, strlen(line), &bw);
-                if (res != FR_OK && res != 0) { /* handle */ }
-            }
+            if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
 
             // Print S1 Data
             if (stats.s1_valid) {
-                len = snprintf(line, sizeof(line), "S1,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%lu,LAT:%ld,LON:%ld,SAT:%d,TIME:%02d:%02d:%02d,DATE:%02d/%02d/%04d,SPEED:%.1f",
-                        stats.s1_ax, stats.s1_ay, stats.s1_az,
-                        stats.s1_rms_v, stats.s1_rms_l,
-                        stats.s1_sd_v, stats.s1_sd_l,
-                        stats.s1_p2p_v, stats.s1_p2p_l,
-                        stats.s1_peak, time_ms,
-                        gps_local.lat_i, gps_local.lon_i, gps_local.satellites,
-                        gps_local.hour, gps_local.minute, gps_local.second,
-                        gps_local.day, gps_local.month, gps_local.year,
-                        speed_kmh);
-                crc = crc16_ccitt((uint8_t*)line, len);
-                snprintf(line + len, sizeof(line) - len, ",CRC:0x%04X\r\n", crc);
-
+                PacketS1S2_t p1 = {
+                    .header = 0x01,
+                    .ax = stats.s1_ax, .ay = stats.s1_ay, .az = stats.s1_az,
+                    .rms_v = stats.s1_rms_v, .rms_l = stats.s1_rms_l,
+                    .sd_v = stats.s1_sd_v, .sd_l = stats.s1_sd_l,
+                    .p2p_v = stats.s1_p2p_v, .p2p_l = stats.s1_p2p_l,
+                    .peak = stats.s1_peak,
+                    .time_ms = time_ms,
+                    .lat_i = gps_local.lat_i, .lon_i = gps_local.lon_i,
+                    .satellites = gps_local.satellites, .valid = gps_local.valid,
+                    .hour = gps_local.hour, .minute = gps_local.minute, .second = gps_local.second,
+                    .day = gps_local.day, .month = gps_local.month, .year = gps_local.year,
+                    .speed_kmh = speed_kmh
+                };
+                p1.crc = crc16_ccitt((uint8_t*)&p1, sizeof(p1) - 2);
+                buffer_to_hex((uint8_t*)&p1, sizeof(p1), hex_buf);
+                snprintf(line, sizeof(line), "S1 Binary: %s (68 bytes)\r\n", hex_buf);
                 usart_puts(line);
                 if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
             }
 
             // Print S2 Data
             if (stats.s2_valid) {
-                len = snprintf(line, sizeof(line), "S2,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%lu,LAT:%ld,LON:%ld,SAT:%d,TIME:%02d:%02d:%02d,DATE:%02d/%02d/%04d,SPEED:%.1f",
-                        stats.s2_ax, stats.s2_ay, stats.s2_az,
-                        stats.s2_rms_v, stats.s2_rms_l,
-                        stats.s2_sd_v, stats.s2_sd_l,
-                        stats.s2_p2p_v, stats.s2_p2p_l,
-                        stats.s2_peak, time_ms,
-                        gps_local.lat_i, gps_local.lon_i, gps_local.satellites,
-                        gps_local.hour, gps_local.minute, gps_local.second,
-                        gps_local.day, gps_local.month, gps_local.year,
-                        speed_kmh);
-                crc = crc16_ccitt((uint8_t*)line, len);
-                snprintf(line + len, sizeof(line) - len, ",CRC:0x%04X\r\n", crc);
-
+                PacketS1S2_t p2 = {
+                    .header = 0x02,
+                    .ax = stats.s2_ax, .ay = stats.s2_ay, .az = stats.s2_az,
+                    .rms_v = stats.s2_rms_v, .rms_l = stats.s2_rms_l,
+                    .sd_v = stats.s2_sd_v, .sd_l = stats.s2_sd_l,
+                    .p2p_v = stats.s2_p2p_v, .p2p_l = stats.s2_p2p_l,
+                    .peak = stats.s2_peak,
+                    .time_ms = time_ms,
+                    .lat_i = gps_local.lat_i, .lon_i = gps_local.lon_i,
+                    .satellites = gps_local.satellites, .valid = gps_local.valid,
+                    .hour = gps_local.hour, .minute = gps_local.minute, .second = gps_local.second,
+                    .day = gps_local.day, .month = gps_local.month, .year = gps_local.year,
+                    .speed_kmh = speed_kmh
+                };
+                p2.crc = crc16_ccitt((uint8_t*)&p2, sizeof(p2) - 2);
+                buffer_to_hex((uint8_t*)&p2, sizeof(p2), hex_buf);
+                snprintf(line, sizeof(line), "S2 Binary: %s (68 bytes)\r\n", hex_buf);
                 usart_puts(line);
                 if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
             }
 
             // EVENT Line
-            len = snprintf(line, sizeof(line), "EVENT,%lu,S1=%.2f(%s),S2=%.2f(%s)",
-                    time_ms, 
-                    stats.s1_peak, get_range_str(stats.s1_peak),
-                    stats.s2_peak, get_range_str(stats.s2_peak));
-            crc = crc16_ccitt((uint8_t*)line, len);
-            snprintf(line + len, sizeof(line) - len, ",CRC:0x%04X\r\n", crc);
-
+            PacketEvent_t pe = {
+                .header = 0x03,
+                .time_ms = time_ms,
+                .s1_peak = stats.s1_peak,
+                .s2_peak = stats.s2_peak
+            };
+            pe.crc = crc16_ccitt((uint8_t*)&pe, sizeof(pe) - 2);
+            buffer_to_hex((uint8_t*)&pe, sizeof(pe), hex_buf);
+            snprintf(line, sizeof(line), "EVENT Binary: %s (15 bytes)\r\n", hex_buf);
             usart_puts(line);
             if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
 
@@ -308,7 +339,7 @@ static void vHealthTask(void *pvParam)
         health_set_sensor(1, id1 == 0xE5 ? HEALTH_OK : HEALTH_FAIL, id1);
         health_set_sensor(2, id2 == 0xE5 ? HEALTH_OK : HEALTH_FAIL, id2);
         
-        usart_puts("[SYSTEM] Health Check OK\r\n");
+        usart_puts("STM32: [SYSTEM] Health Check OK\r\n");
     }
 }
 
