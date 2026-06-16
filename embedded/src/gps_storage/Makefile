@@ -1,7 +1,7 @@
 PROJECT_ROOT  := ../..
 FREERTOS_ROOT := $(PROJECT_ROOT)/src/freertos
-
-# Clock
+FATFS_OBJ = $(wildcard ../../src/fatfs/obj/*.o)
+# Clock 
 # 96: PLL on HSI — full performance, correct USB clock (48 MHz)
 # 16: HSI direct — no PLL. Override: make -C src/gps_storage CPU_CLOCK_MHZ=16
 CPU_CLOCK_MHZ ?= 96
@@ -13,7 +13,8 @@ INCLUDES = \
     -I$(PROJECT_ROOT)/include \
     -I$(PROJECT_ROOT)/include/freertos \
     -I$(PROJECT_ROOT)/src/freertos/portable/GCC/ARM_CM4F \
-    -I$(PROJECT_ROOT)/src/common
+    -I$(PROJECT_ROOT)/src/common \
+	-I$(PROJECT_ROOT)/src/fatfs
 
 # Inherit CFLAGS from root Makefile (includes FPU flags); add clock define.
 CFLAGS_LOCAL = $(CFLAGS) -DCPU_CLOCK_MHZ=$(CPU_CLOCK_MHZ)
@@ -23,15 +24,15 @@ SRC = \
     spi.c \
     gps.c \
     sd.c \
-    gps_health.c \
     main.c
 
 # ── Local common sources (not in COMMON_OBJ) ──────────────────────────────────
 # clock_config.c  — PLL setup (needed for 96 MHz, compiled for both speeds)
 # led_debug.c     — PWM LED, used for status indication
 LOCAL_CSRC = \
-    $(PROJECT_ROOT)/src/common/led_debug.c
-    # $(PROJECT_ROOT)/src/common/clock_config.c \ -- gps_storage uses SysTick_Config instead.
+    $(PROJECT_ROOT)/src/common/led_debug.c \
+    $(PROJECT_ROOT)/src/common/clock_config.c \
+    $(PROJECT_ROOT)/src/common/gps_health.c
 
 OBJDIR          = obj
 FREERTOS_OBJDIR = freertos_obj
@@ -76,6 +77,9 @@ $(OBJDIR)/clock_config.o: $(PROJECT_ROOT)/src/common/clock_config.c | $(OBJDIR)
 $(OBJDIR)/led_debug.o: $(PROJECT_ROOT)/src/common/led_debug.c | $(OBJDIR)
 	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
 
+$(OBJDIR)/gps_health.o: $(PROJECT_ROOT)/src/common/gps_health.c | $(OBJDIR)
+	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -c $< -o $@
+
 # delay.c — compiled with USE_FREERTOS_SYSTICK to suppress its SysTick_Handler
 $(DELAY_OBJ): $(PROJECT_ROOT)/src/common/delay.c | $(OBJDIR)
 	$(CC) $(CFLAGS_LOCAL) $(INCLUDES) -DUSE_FREERTOS_SYSTICK -c $< -o $@
@@ -104,7 +108,8 @@ $(FREERTOS_OBJDIR)/heap_4.o: $(FREERTOS_ROOT)/portable/MemMang/heap_4.c | $(FREE
 
 # ── Link ───────────────────────────────────────────────────────────────────────
 $(TARGET): $(OBJ) $(LOCAL_OBJ) $(DELAY_OBJ) $(FREERTOS_OBJ)
-	$(CC) $(CFLAGS_LOCAL) $^ $(COMMON_OBJ) $(LDFLAGS) -lm -lgcc -lnosys -o $@
+	$(CC) -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard \
+	$^ $(COMMON_OBJ) $(FATFS_OBJ) $(LDFLAGS) -lm -lgcc -lnosys -o $@
 
 $(BIN): $(TARGET)
 	$(OBJCOPY) -O binary $< $@

@@ -8,5 +8,7 @@ void USART2_Init(void);
 
 // USART2 Debug print function (printf-style)
 void usart_debug(const char* format, ...);
+void usart_puts(const char* s);
+
 
 #endif // USART_DEBUG_H
