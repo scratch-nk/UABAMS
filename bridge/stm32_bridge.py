@@ -13,8 +13,8 @@ import struct
 
 # ================= MQTT CONFIG =================
 #MQTT_HOST = "172.27.30.92"
-MQTT_HOST = "192.168.0.156"
-#MQTT_HOST = "10.45.192.92"
+#MQTT_HOST = "192.168.1.10"
+MQTT_HOST = "10.127.150.92"
 MQTT_PORT = 1883
 
 MQTT_TOPIC_LEFT                = "adj/datalogger/sensors/left"

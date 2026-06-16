@@ -30,6 +30,7 @@
 
 FATFS fs;
 FIL fil;
+FIL fil_bin;
 #define SW_VERSION   "v1.0.1"
 #define BOX_ID       "BOX 1"
 #define FREERTOS_VER "v10.6.2"
@@ -59,6 +60,39 @@ typedef struct {
     float s2_p2p_v, s2_p2p_l;
     float s2_peak;
 } WindowStats_t;
+
+// Binary structures matching bridge/stm32_bridge.py
+typedef struct __attribute__((packed)) {
+    uint8_t  tag;
+    uint32_t val1;
+    uint32_t val2;
+    uint16_t crc;
+} bin_cfg_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t  tag;
+    float    vals[10];
+    uint32_t uptime;
+    float    lat;
+    float    lon;
+    uint16_t sat;
+    float    speed;
+    uint8_t  hour;
+    uint8_t  min;
+    uint8_t  sec;
+    uint8_t  day;
+    uint8_t  month;
+    uint16_t year;
+    uint16_t crc;
+} bin_sensor_t;
+
+typedef struct __attribute__((packed)) {
+    uint8_t  tag;
+    uint32_t uptime;
+    float    s1_peak;
+    float    s2_peak;
+    uint16_t crc;
+} bin_event_t;
 
 // RTOS handles 
 static QueueHandle_t     xAccelQueue;            
@@ -183,6 +217,7 @@ static void vLogTask(void *pvParam)
     char line[512];
     UINT bw;
     uint8_t sd_mounted = 0;
+    uint8_t sd_bin_ready = 0;
     FRESULT res;
 
     vTaskDelay(pdMS_TO_TICKS(1000)); // Wait for SD to settle
@@ -191,13 +226,26 @@ static void vLogTask(void *pvParam)
     res = f_mount(&fs, "", 1);
     if (res == FR_OK) {
         usart_debug("[LogTask] SD Mounted OK\r\n");
+        
+        // Open Text File
         res = f_open(&fil, "data.txt", FA_OPEN_ALWAYS | FA_WRITE);
         if (res == FR_OK) {
             f_lseek(&fil, f_size(&fil));
             sd_mounted = 1;
             usart_debug("[LogTask] File 'data.txt' opened OK\r\n");
         } else {
-            snprintf(line, sizeof(line), "[LogTask] f_open FAIL: %d\r\n", res);
+            snprintf(line, sizeof(line), "[LogTask] f_open (.txt) FAIL: %d\r\n", res);
+            usart_debug(line);
+        }
+
+        // Open Binary File
+        res = f_open(&fil_bin, "data.bin", FA_OPEN_ALWAYS | FA_WRITE);
+        if (res == FR_OK) {
+            f_lseek(&fil_bin, f_size(&fil_bin));
+            sd_bin_ready = 1;
+            usart_debug("[LogTask] File 'data.bin' opened OK\r\n");
+        } else {
+            snprintf(line, sizeof(line), "[LogTask] f_open (.bin) FAIL: %d\r\n", res);
             usart_debug(line);
         }
     } else {
@@ -211,18 +259,24 @@ static void vLogTask(void *pvParam)
             gps_get_copy(&gps_local);
             float speed_kmh = gps_local.speed_cms * 0.036f;
 
-            // CFG Line
+            // --- CFG Line ---
             int len = snprintf(line, sizeof(line), "CFG,%d,%d", FS_HZ, WINDOW_MS);
             uint16_t crc = crc16_ccitt((uint8_t*)line, len);
             snprintf(line + len, sizeof(line) - len, ",CRC:0x%04X\r\n", crc);
             
             usart_puts(line);
-            if (sd_mounted) {
-                res = f_write(&fil, line, strlen(line), &bw);
-                if (res != FR_OK && res != 0) { /* handle */ }
+            if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
+            
+            if (sd_bin_ready) {
+                bin_cfg_t cfg_pkt;
+                cfg_pkt.tag = 4;
+                cfg_pkt.val1 = FS_HZ;
+                cfg_pkt.val2 = WINDOW_MS;
+                cfg_pkt.crc = crc16_ccitt((uint8_t*)&cfg_pkt, sizeof(cfg_pkt) - 2);
+                f_write(&fil_bin, &cfg_pkt, sizeof(cfg_pkt), &bw);
             }
 
-            // Print S1 Data
+            // --- S1 Data ---
             if (stats.s1_valid) {
                 len = snprintf(line, sizeof(line), "S1,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%lu,LAT:%ld,LON:%ld,SAT:%d,TIME:%02d:%02d:%02d,DATE:%02d/%02d/%04d,SPEED:%.1f",
                         stats.s1_ax, stats.s1_ay, stats.s1_az,
@@ -230,7 +284,7 @@ static void vLogTask(void *pvParam)
                         stats.s1_sd_v, stats.s1_sd_l,
                         stats.s1_p2p_v, stats.s1_p2p_l,
                         stats.s1_peak, time_ms,
-                        gps_local.lat_i, gps_local.lon_i, gps_local.satellites,
+                        gps_local.lat_i, gps_local.lon_i, gps_local.satellite       s,
                         gps_local.hour, gps_local.minute, gps_local.second,
                         gps_local.day, gps_local.month, gps_local.year,
                         speed_kmh);
@@ -239,9 +293,28 @@ static void vLogTask(void *pvParam)
 
                 usart_puts(line);
                 if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
+
+                if (sd_bin_ready) {
+                    bin_sensor_t s1_pkt;
+                    s1_pkt.tag = 1;
+                    s1_pkt.vals[0] = stats.s1_ax; s1_pkt.vals[1] = stats.s1_ay; s1_pkt.vals[2] = stats.s1_az;
+                    s1_pkt.vals[3] = stats.s1_rms_v; s1_pkt.vals[4] = stats.s1_rms_l;
+                    s1_pkt.vals[5] = stats.s1_sd_v; s1_pkt.vals[6] = stats.s1_sd_l;
+                    s1_pkt.vals[7] = stats.s1_p2p_v; s1_pkt.vals[8] = stats.s1_p2p_l;
+                    s1_pkt.vals[9] = stats.s1_peak;
+                    s1_pkt.uptime = time_ms;
+                    s1_pkt.lat = (float)gps_local.lat_i;
+                    s1_pkt.lon = (float)gps_local.lon_i;
+                    s1_pkt.sat = gps_local.satellites;
+                    s1_pkt.speed = speed_kmh;
+                    s1_pkt.hour = gps_local.hour; s1_pkt.min = gps_local.minute; s1_pkt.sec = gps_local.second;
+                    s1_pkt.day = gps_local.day; s1_pkt.month = gps_local.month; s1_pkt.year = gps_local.year;
+                    s1_pkt.crc = crc16_ccitt((uint8_t*)&s1_pkt, sizeof(s1_pkt) - 2);
+                    f_write(&fil_bin, &s1_pkt, sizeof(s1_pkt), &bw);
+                }
             }
 
-            // Print S2 Data
+            // --- S2 Data ---
             if (stats.s2_valid) {
                 len = snprintf(line, sizeof(line), "S2,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%lu,LAT:%ld,LON:%ld,SAT:%d,TIME:%02d:%02d:%02d,DATE:%02d/%02d/%04d,SPEED:%.1f",
                         stats.s2_ax, stats.s2_ay, stats.s2_az,
@@ -258,9 +331,28 @@ static void vLogTask(void *pvParam)
 
                 usart_puts(line);
                 if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
+
+                if (sd_bin_ready) {
+                    bin_sensor_t s2_pkt;
+                    s2_pkt.tag = 2;
+                    s2_pkt.vals[0] = stats.s2_ax; s2_pkt.vals[1] = stats.s2_ay; s2_pkt.vals[2] = stats.s2_az;
+                    s2_pkt.vals[3] = stats.s2_rms_v; s2_pkt.vals[4] = stats.s2_rms_l;
+                    s2_pkt.vals[5] = stats.s2_sd_v; s2_pkt.vals[6] = stats.s2_sd_l;
+                    s2_pkt.vals[7] = stats.s2_p2p_v; s2_pkt.vals[8] = stats.s2_p2p_l;
+                    s2_pkt.vals[9] = stats.s2_peak;
+                    s2_pkt.uptime = time_ms;
+                    s2_pkt.lat = (float)gps_local.lat_i;
+                    s2_pkt.lon = (float)gps_local.lon_i;
+                    s2_pkt.sat = gps_local.satellites;
+                    s2_pkt.speed = speed_kmh;
+                    s2_pkt.hour = gps_local.hour; s2_pkt.min = gps_local.minute; s2_pkt.sec = gps_local.second;
+                    s2_pkt.day = gps_local.day; s2_pkt.month = gps_local.month; s2_pkt.year = gps_local.year;
+                    s2_pkt.crc = crc16_ccitt((uint8_t*)&s2_pkt, sizeof(s2_pkt) - 2);
+                    f_write(&fil_bin, &s2_pkt, sizeof(s2_pkt), &bw);
+                }
             }
 
-            // EVENT Line
+            // --- EVENT Data ---
             len = snprintf(line, sizeof(line), "EVENT,%lu,S1=%.2f(%s),S2=%.2f(%s)",
                     time_ms, 
                     stats.s1_peak, get_range_str(stats.s1_peak),
@@ -271,13 +363,21 @@ static void vLogTask(void *pvParam)
             usart_puts(line);
             if (sd_mounted) f_write(&fil, line, strlen(line), &bw);
 
+            if (sd_bin_ready) {
+                bin_event_t ev_pkt;
+                ev_pkt.tag = 3;
+                ev_pkt.uptime = time_ms;
+                ev_pkt.s1_peak = stats.s1_peak;
+                ev_pkt.s2_peak = stats.s2_peak;
+                ev_pkt.crc = crc16_ccitt((uint8_t*)&ev_pkt, sizeof(ev_pkt) - 2);
+                f_write(&fil_bin, &ev_pkt, sizeof(ev_pkt), &bw);
+            }
+
             // Sync SD every 1 second (every 10 windows of 100ms)
             static int sc = 0;
-            if (sd_mounted && ++sc >= 10) { 
-                if (f_sync(&fil) != FR_OK) {
-                    usart_debug("[LogTask] f_sync FAIL\r\n");
-                    // sd_mounted = 0; // Optional: disable if it keeps failing
-                }
+            if (++sc >= 10) { 
+                if (sd_mounted) f_sync(&fil);
+                if (sd_bin_ready) f_sync(&fil_bin);
                 sc = 0; 
             }
         }
