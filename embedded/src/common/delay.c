@@ -4,10 +4,12 @@
 
  volatile uint32_t ms_ticks = 0;
 
+#ifndef USE_FREERTOS_SYSTICK
 void SysTick_Handler(void)
 {
     ms_ticks++;
 }
+#endif
 
 void delay_init(void)
 {

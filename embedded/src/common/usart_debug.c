@@ -50,8 +50,11 @@
  */
 static uint32_t get_pclk1_freq(void) {
     uint32_t sysclk;
-    /* Read the System clock switch status to see which clock is providing SYSCLK */
-    uint32_t sws = (RCC->CFGR & RCC_CFGR_SWS) >> RCC_CFGR_SWS_Pos;
+    /* Read the System clock switch status (unshifted — compare against raw
+     * mask constants RCC_CFGR_SWS_HSE=0x4, RCC_CFGR_SWS_PLL=0x8).
+     * Do NOT shift: the constants are defined as full register values, not
+     * bit-field values; shifting would break the comparisons. */
+    uint32_t sws = RCC->CFGR & RCC_CFGR_SWS;
 
     /* If SYSCLK source is HSE, use configured HSE_VALUE */
     if (sws == RCC_CFGR_SWS_HSE) {

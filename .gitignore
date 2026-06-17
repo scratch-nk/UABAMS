@@ -7,6 +7,8 @@
 Thumbs.db
 desktop.ini
 
+.gitignore
+
 # Editors
 .vscode/
 .idea/
@@ -14,10 +16,21 @@ desktop.ini
 *.swo
 *~
 
+node_modules/
+
+
 # Secrets — catch-all, never let these through
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 secrets.*
 config.local.*
+
+# the embedded binaries
+*.o
+*.elf
+*.bin
+
+data/

@@ -1,0 +1,36 @@
+/* ============================================================
+   common.css — Shared styles for all RailMonitor html_pages
+   ============================================================ */
+
+/* Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* Shared animation: pulsing dot used in live status badges */
+@keyframes pulse {
+    0%   { opacity: 1; transform: scale(1);   }
+    50%  { opacity: 0.5; transform: scale(1.2); }
+    100% { opacity: 1; transform: scale(1);   }
+}
+
+/* Priority class badges — used across analysis and km-wise pages */
+.badge-p1 { background: #fef3c7; color: #92400e; }
+.badge-p2 { background: #fee2e2; color: #b91c1c; }
+.badge-p3 { background: #f1f5f9; color: #7f1d1d; font-weight: 700; }
+
+/* Table base — each page may add its own padding/border overrides */
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+/* Empty / no-data state */
+.no-data {
+    text-align: center;
+    padding: 40px;
+    color: #64748b;
+    font-style: italic;
+}

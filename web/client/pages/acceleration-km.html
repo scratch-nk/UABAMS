@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accelerations Km - Datalogger</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../css/common.css">
+    <link rel="stylesheet" href="../css/pages/acceleration-km.css">
+</head>
+<body>
+
+<!-- Toolbar -->
+<div class="toolbar">
+    <span class="toolbar-label">Recorded Accelerations Km (—)</span>
+
+    <div class="toolbar-item active" id="blocksTab" onclick="toggleSection('blocks')">
+        <input type="checkbox" id="blocksCheck" checked>
+        <label for="blocksCheck">Blocks</label>
+    </div>
+
+    <div class="toolbar-item" id="peakDistTab" onclick="toggleSection('peakDist')">
+        <input type="checkbox" id="peakDistCheck">
+        <label for="peakDistCheck">Peak Distribution</label>
+    </div>
+
+    <div class="toolbar-item" id="worstPeaksTab" onclick="toggleSection('worstPeaks')">
+        <input type="checkbox" id="worstPeaksCheck">
+        <label for="worstPeaksCheck">Worst Peaks</label>
+    </div>
+
+    <div class="toolbar-status">
+        <div class="status-dot live" id="hw-status"></div>
+        <span id="hw-status-label">LIVE</span>
+    </div>
+
+    <button class="csv-btn" onclick="exportCSV()">
+        <i class="fas fa-download"></i> Export CSV
+    </button>
+</div>
+
+<!-- Offline banner -->
+<div id="offline-banner" style="display: none;">
+    <i class="fas fa-plug"></i> Hardware disconnected – showing last completed KM
+</div>
+
+<!-- KM container -->
+<div class="container" id="km-container">
+
+    <!-- Blocks Section -->
+    <div class="km-block km-live" id="blocks-section">
+        <div class="km-header">
+            <div class="km-header-left">
+                <strong>Northern Central</strong>
+                <span class="direction-badge">MTJ-AGC UP (26)</span>
+            </div>
+            <div class="km-header-right">
+                <span class="live-badge"><span class="blink">●</span> LIVE</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-table"></i> Blocks
+            </div>
+            <div class="table-container blocks-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="2">LOC</th>
+                            <th colspan="4" style="background:#fee2e2;">LEFT</th>
+                            <th colspan="4" style="background:#dbeafe;">RIGHT</th>
+                        </tr>
+                        <tr>
+                            <th>RMS<br>V</th>
+                            <th>RMS<br>L</th>
+                            <th>SD<br>V</th>
+                            <th>SD<br>L</th>
+                            <th>RMS<br>V</th>
+                            <th>RMS<br>L</th>
+                            <th>SD<br>V</th>
+                            <th>SD<br>L</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blocks-body">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Peak Distribution Section -->
+    <div class="km-block" id="peakDist-section" style="display: none;">
+        <div class="km-header">
+            <div class="km-header-left">
+                <strong>Northern Central</strong>
+                <span class="direction-badge">MTJ-AGC UP (26)</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-chart-pie"></i> Peak Distribution
+            </div>
+            <div class="table-container peak-dist-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>BANDS</th>
+                            <th colspan="4">LEFT</th>
+                            <th colspan="4">RIGHT</th>
+                        </tr>
+                        <tr>
+                            <th></th>
+                            <th>V</th>
+                            <th>L</th>
+                            <th>V</th>
+                            <th>L</th>
+                            <th>V</th>
+                            <th>L</th>
+                            <th>V</th>
+                            <th>L</th>
+                        </tr>
+                    </thead>
+                    <tbody id="peak-dist-body">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Worst Peaks Section -->
+    <div class="km-block" id="worstPeaks-section" style="display: none;">
+        <div class="km-header">
+            <div class="km-header-left">
+                <strong>Northern Central</strong>
+                <span class="direction-badge">MTJ-AGC UP (26)</span>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                <i class="fas fa-exclamation-triangle"></i> Worst Peaks
+            </div>
+            <div class="table-container worst-peaks-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Parameter</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody id="worst-peaks-body">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="../js/common.js"></script>
+<script src="../js/pages/acceleration-km.js"></script>
+
+</body>
+</html>

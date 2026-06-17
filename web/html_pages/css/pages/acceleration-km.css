@@ -1,0 +1,171 @@
+/* acceleration-km.css — KM-wise recorded accelerations */
+
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f0f2f5;
+    margin: 0;
+    color: #1e293b;
+}
+
+/* Toolbar (tab switcher) */
+.toolbar {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 12px 20px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.toolbar-label { font-weight: 600; color: #1e293b; margin-right: 5px; }
+
+.toolbar-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+
+.toolbar-item:hover  { background: #e2e8f0; }
+.toolbar-item.active { background: #22c55e; color: white; border-color: #22c55e; }
+.toolbar-item.active input[type="checkbox"] { accent-color: white; }
+.toolbar-item input[type="checkbox"] { margin: 0; cursor: pointer; }
+
+.container { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+/* KM Block */
+.km-block {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+/* KM Header */
+.km-header {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    color: white;
+    padding: 16px 20px;
+    font-size: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.km-header-left { display: flex; gap: 30px; flex-wrap: wrap; }
+
+.km-header-right {
+    background: rgba(255,255,255,0.1);
+    padding: 4px 12px;
+    border-radius: 30px;
+    font-size: 12px;
+}
+
+/* Direction badge */
+.direction-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 30px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 10px;
+}
+
+.direction-down { background: #fee2e2; color: #b91c1c; }
+
+/* Sections */
+.section {
+    padding: 20px;
+    border-bottom: 1px solid #e2e8f0;
+    animation: fadeIn 0.3s ease;
+}
+
+.section:last-child { border-bottom: none; }
+
+.section-title {
+    font-weight: 600;
+    margin-bottom: 16px;
+    font-size: 16px;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.section-title i { color: #22c55e; }
+
+/* Tables */
+.table-container { overflow-x: auto; margin-bottom: 15px; }
+
+th, td { padding: 10px 8px; border: 1px solid #e2e8f0; text-align: center; }
+th { background: #f8fafc; font-weight: 600; color: #1e293b; }
+tr:hover td { background: #f8fafc; }
+
+table { min-width: 1200px; font-size: 12px; }
+
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 30px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Value color coding */
+.value-high   { color: #ef4444; font-weight: 600; }
+.value-medium { color: #f59e0b; font-weight: 600; }
+.value-low    { color: #22c55e; }
+
+/* Meter markers */
+.meter-marker {
+    font-family: monospace;
+    font-weight: 600;
+    color: #2563eb;
+    background: #dbeafe;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.peak-meter { font-family: monospace; font-weight: 600; }
+.peak-meter span { font-size: 10px; color: #64748b; margin-left: 2px; }
+
+/* Count badges */
+.count-badge {
+    display: inline-block;
+    min-width: 24px;
+    height: 24px;
+    line-height: 24px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.count-p1 { background: #fef3c7; color: #92400e; }
+.count-p2 { background: #fee2e2; color: #b91c1c; }
+.count-p3 { background: #f1f5f9; color: #7f1d1d; font-weight: 700; }
+
+/* Standard deviation columns */
+.sd-column { background: #f0f9ff; font-weight: 500; }
+.sd-value  { font-family: monospace; color: #0284c7; }
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 768px) {
+    .toolbar      { flex-direction: column; align-items: flex-start; }
+    .km-header    { flex-direction: column; gap: 10px; align-items: flex-start; }
+    .km-header-left { flex-direction: column; gap: 10px; }
+}

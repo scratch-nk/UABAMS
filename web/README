@@ -1,0 +1,7 @@
+Dummy README
+Architectural issue: All clients will have to run server. Probably resolved after migration to React, to be tested.
+
+TODO:
+
+1. Setup details. Stack, how it is put together
+2. How to run client, server.

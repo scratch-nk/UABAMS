@@ -1,7 +1,8 @@
 # Root Makefile for UABAMS
-export CC      = arm-none-eabi-gcc
-export OBJCOPY = arm-none-eabi-objcopy
-export MCU     = -mcpu=cortex-m4 -mthumb
+export TOOLCHAIN_PREFIX ?= /usr/local/bin/gcc-arm-none-eabi-10.3-2021.10/bin/
+export CC      = $(TOOLCHAIN_PREFIX)arm-none-eabi-gcc
+export OBJCOPY = $(TOOLCHAIN_PREFIX)arm-none-eabi-objcopy
+export MCU     = -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard
 export DEFS    = -DSTM32F411xE
 export CFLAGS  = $(MCU) -O0 -g -Wall -ffreestanding $(DEFS) -u _printf_float
 export LDFLAGS_COMMON = -nostdlib -lc -lm -lgcc -lnosys
@@ -16,7 +17,8 @@ COMMON_SRC = \
  usart_debug.c \
  spi2.c \
  w5500.c \
- delay.c \
+ boot_info.c \
+ ethernet_health.c \
  system_stm32f4xx.c \
  startup.s \
  syscalls.c
@@ -26,6 +28,9 @@ COMMON_OBJ := $(COMMON_OBJ:.s=.o)
 
 # Default: build all projects
 all: accelerometer gps_storage
+
+bringup:
+	$(MAKE) -C src/bringup
 
 # Build common objects
 common: $(COMMON_OBJ)
@@ -78,3 +83,4 @@ flash_gpsstorage:
 	$(MAKE) -C src/gps_storage flash
 
 .PHONY: all common accelerometer gps_storage clean clean-common clean-accelerometer clean-gps_storage seriallist serialmonitor serialmonitor0 serialmonitor1
+

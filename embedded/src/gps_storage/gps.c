@@ -95,88 +95,90 @@ void gps_usart6_init(void)
 
 
 /* =========================================================
-   GPS POLLING & PARSING
+   GPS PARSING  (shared by poll and feed paths)
    ========================================================= */
 
-void gps_poll(void)
+void gps_feed(char c)
 {
     static char line[128];
     static uint8_t idx = 0;
 
-    if (USART6->SR & USART_SR_RXNE)
+    if (c == '\n')
     {
-        char c = USART6->DR;
+        line[idx] = '\0';
+        idx = 0;
 
-        if (c == '\n')
+        if (strstr(line, "RMC,"))
         {
-            line[idx] = '\0';
-            idx = 0;
+            char status[2] = {0};
+            char lat[16] = {0}, lon[16] = {0};
+            char ns[2] = {0}, ew[2] = {0};
+            char speed_knots[16] = {0};
+            char utc_time[16] = {0};
+            char date[8] = {0};
 
-            if (strstr(line, "RMC,"))
+            get_nmea_field(line, 2, status, sizeof(status));
+            get_nmea_field(line, 3, lat, sizeof(lat));
+            get_nmea_field(line, 4, ns, sizeof(ns));
+            get_nmea_field(line, 5, lon, sizeof(lon));
+            get_nmea_field(line, 6, ew, sizeof(ew));
+            get_nmea_field(line, 7, speed_knots, sizeof(speed_knots));
+            get_nmea_field(line, 1, utc_time, sizeof(utc_time));
+            get_nmea_field(line, 9, date, sizeof(date));   // DDMMYY
+
+            if (status[0] == 'A' && lat[0] && lon[0])
             {
-                char status[2] = {0};
-                char lat[16] = {0}, lon[16] = {0};
-                char ns[2] = {0}, ew[2] = {0};
-                char speed_knots[16] = {0};
-                char utc_time[16] = {0};
-                char date[8] = {0};
+                gps_data.valid = 1;
 
-                get_nmea_field(line, 2, status, sizeof(status));
-                get_nmea_field(line, 3, lat, sizeof(lat));
-                get_nmea_field(line, 4, ns, sizeof(ns));
-                get_nmea_field(line, 5, lon, sizeof(lon));
-                get_nmea_field(line, 6, ew, sizeof(ew));
-                get_nmea_field(line, 7, speed_knots, sizeof(speed_knots));
-                get_nmea_field(line, 1, utc_time, sizeof(utc_time));
-                get_nmea_field(line, 9, date, sizeof(date));   // DDMMYY
+                double dlat = nmea_lat_to_decimal(lat);
+                double dlon = nmea_lon_to_decimal(lon);
 
-                if (status[0] == 'A' && lat[0] && lon[0])
+                gps_data.lat_i = (int32_t)(dlat * 1000000);
+                gps_data.lon_i = (int32_t)(dlon * 1000000);
+                gps_data.ns = ns[0];
+                gps_data.ew = ew[0];
+
+                gps_data.speed_cms = (uint32_t)(atof(speed_knots) * 51.444); // knots→cm/s
+
+                if (strlen(utc_time) >= 6)
                 {
-                    gps_data.valid = 1;
+                    gps_data.hour   = (utc_time[0]-'0')*10 + (utc_time[1]-'0');
+                    gps_data.minute = (utc_time[2]-'0')*10 + (utc_time[3]-'0');
+                    gps_data.second = (utc_time[4]-'0')*10 + (utc_time[5]-'0');
 
-                    double dlat = nmea_lat_to_decimal(lat);
-                    double dlon = nmea_lon_to_decimal(lon);
-
-                    gps_data.lat_i = (int32_t)(dlat * 1000000);
-                    gps_data.lon_i = (int32_t)(dlon * 1000000);
-                    gps_data.ns = ns[0];
-                    gps_data.ew = ew[0];
-
-                    gps_data.speed_cms = (uint32_t)(atof(speed_knots) * 51.444); // knots→cm/s
-
-                    if (strlen(utc_time) >= 6)
+                    // UTC → IST
+                    gps_data.minute += 30;
+                    if (gps_data.minute >= 60)
                     {
-                        gps_data.hour   = (utc_time[0]-'0')*10 + (utc_time[1]-'0');
-                        gps_data.minute = (utc_time[2]-'0')*10 + (utc_time[3]-'0');
-                        gps_data.second = (utc_time[4]-'0')*10 + (utc_time[5]-'0');
-
-                        // UTC → IST
-                        gps_data.minute += 30;
-                        if (gps_data.minute >= 60)
-                        {
-                            gps_data.minute -= 60;
-                            gps_data.hour++;
-                        }
-                        gps_data.hour += 5;
-                        if (gps_data.hour >= 24) gps_data.hour -= 24;
+                        gps_data.minute -= 60;
+                        gps_data.hour++;
                     }
-
-                    if (strlen(date) == 6)
-                    {
-                        gps_data.day   = (date[0]-'0')*10 + (date[1]-'0');
-                        gps_data.month = (date[2]-'0')*10 + (date[3]-'0');
-                        gps_data.year  = 2000 + (date[4]-'0')*10 + (date[5]-'0');
-                    }
+                    gps_data.hour += 5;
+                    if (gps_data.hour >= 24) gps_data.hour -= 24;
                 }
-                else
+
+                if (strlen(date) == 6)
                 {
-                    gps_data.valid = 0;
+                    gps_data.day   = (date[0]-'0')*10 + (date[1]-'0');
+                    gps_data.month = (date[2]-'0')*10 + (date[3]-'0');
+                    gps_data.year  = 2000 + (date[4]-'0')*10 + (date[5]-'0');
                 }
             }
-        }
-        else if (idx < sizeof(line)-1)
-        {
-            line[idx++] = c;
+            else
+            {
+                gps_data.valid = 0;
+            }
         }
     }
+    else if (idx < sizeof(line) - 1)
+    {
+        line[idx++] = c;
+    }
+}
+
+/* bare-metal path: call in a tight loop */
+void gps_poll(void)
+{
+    if (USART6->SR & USART_SR_RXNE)
+        gps_feed((char)USART6->DR);
 }
